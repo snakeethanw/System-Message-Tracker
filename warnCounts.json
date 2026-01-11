@@ -1,0 +1,56 @@
+{
+  "1323106269745381396": {
+    "warnings": {},
+    "autopunish": [
+      {
+        "warnings": 3,
+        "duration": "1h"
+      },
+      {
+        "warnings": 5,
+        "duration": "3h"
+      },
+      {
+        "warnings": 7,
+        "duration": "5h"
+      },
+      {
+        "warnings": 10,
+        "duration": "10h"
+      },
+      {
+        "warnings": 12,
+        "duration": "15h"
+      },
+      {
+        "warnings": 15,
+        "duration": "1d"
+      },
+      {
+        "warnings": 17,
+        "duration": "36h"
+      },
+      {
+        "warnings": 20,
+        "duration": "2d"
+      },
+      {
+        "warnings": 22,
+        "duration": "3d"
+      },
+      {
+        "warnings": 25,
+        "duration": "5d"
+      },
+      {
+        "warnings": 30,
+        "duration": "7d"
+      }
+    ]
+  },
+  "1434679299549564960": {
+    "warnings": {},
+    "autopunish": []
+  }
+}
+
