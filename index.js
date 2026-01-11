@@ -1,6 +1,10 @@
 const http = require("http");
-const server = http.createServer((req, res) => res.end("OK"));
+const server = http.createServer((req, res) => {
+  res.writeHead(200, { "Content-Type": "text/plain" });
+  res.end("OK");
+});
 server.listen(process.env.PORT || 3000);
+
 require("dotenv").config();
 const token = process.env.TOKEN;
 
@@ -729,6 +733,7 @@ client.on('interactionCreate', async interaction => {
 // LOGIN
 // -------------------------
 client.login(process.env.TOKEN);
+
 
 
 
