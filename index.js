@@ -398,8 +398,8 @@ client.on('ready', async () => {
 // ROTATING BOT STATUS
 // -------------------------
 const statuses = [
-  { name: "'How to Track Messages?'", type: 3 },
-  { name: "to some classical music", type: 2 },
+  { name: "'How to Track Messages?'🤔", type: 3 },
+  { name: " some classical music", type: 2 },
   { name: "live about Discord Messages and how they work", type: 1 },
   { name: "System | Message Tracker", type: 0 }
 ];
@@ -768,6 +768,7 @@ client.on('interactionCreate', async interaction => {
 // LOGIN
 // -------------------------
 client.login(process.env.TOKEN);
+
 
 
 
