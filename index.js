@@ -412,7 +412,7 @@ client.on('ready', async () => {
 
   let i = 0;
   setInterval(() => {
-    const activity = activities[i % activities.length];
+    const activity = statuses[i % statuses.length];
     const mode = statusModes[i % statusModes.length];
 
     client.user.setPresence({
@@ -767,6 +767,7 @@ client.on('interactionCreate', async interaction => {
 // LOGIN
 // -------------------------
 client.login(process.env.TOKEN);
+
 
 
 
