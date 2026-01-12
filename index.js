@@ -394,35 +394,36 @@ const commands = [
 client.on('ready', async () => {
   console.log(`Logged in as ${client.user.tag}`);
 
-  // -------------------------
-  // ROTATING BOT STATUS
-  // -------------------------
-  const statuses = [
-    { name: "'How to Track Messages?'", type: 3 },                             // Watching
-    { name: "to some classical music", type: 2 },                              // Listening
-    { name: "live about Discord Messages and how they work", type: 1 },        // Streaming
-    { name: "System | Message Tracker", type: 0 }                              // Playing
-  ];
+ // -------------------------
+// ROTATING BOT STATUS
+// -------------------------
+const statuses = [
+  { name: "'How to Track Messages?'", type: 3 },
+  { name: "to some classical music", type: 2 },
+  { name: "live about Discord Messages and how they work", type: 1 },
+  { name: "System | Message Tracker", type: 0 }
+];
 
-  const statusModes = [
-    "online",
-    "idle",
-    "dnd"
-  ];
+const statusModes = ["online", "idle", "dnd"];
 
-  let i = 0;
-  setInterval(() => {
-    const activity = statuses[i % statuses.length];
-    const mode = statusModes[i % statusModes.length];
+let i = 0;
+let statusIndex = 0;
 
-    client.user.setPresence({
-      activities: [activity],
-      status: mode
-    });
+setInterval(() => {
+  const activity = statuses[i % statuses.length];
 
-    i++;
-  }, 600000); // rotates every 10 minutes
+  // Rotate status every 3 cycles (every 30 minutes)
+  if (i % 3 === 0) {
+    statusIndex = (statusIndex + 1) % statusModes.length;
+  }
 
+  client.user.setPresence({
+    activities: [activity],
+    status: statusModes[statusIndex]
+  });
+
+  i++;
+}, 600000); // 10 minutes
 
 
   // -------------------------
@@ -767,6 +768,7 @@ client.on('interactionCreate', async interaction => {
 // LOGIN
 // -------------------------
 client.login(process.env.TOKEN);
+
 
 
 
