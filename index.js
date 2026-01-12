@@ -394,6 +394,40 @@ const commands = [
 client.on('ready', async () => {
   console.log(`Logged in as ${client.user.tag}`);
 
+  // -------------------------
+  // ROTATING BOT STATUS
+  // -------------------------
+  const statuses = [
+    { name: "'How to Track Messages?'", type: 3 },                             // Watching
+    { name: "to some classical music", type: 2 },                              // Listening
+    { name: "live about Discord Messages and how they work", type: 1 },        // Streaming
+    { name: "System | Message Tracker", type: 0 }                              // Playing
+  ];
+
+  const statusModes = [
+    "online",
+    "idle",
+    "dnd"
+  ];
+
+  let i = 0;
+  setInterval(() => {
+    const activity = activities[i % activities.length];
+    const mode = statusModes[i % statusModes.length];
+
+    client.user.setPresence({
+      activities: [activity],
+      status: mode
+    });
+
+    i++;
+  }, 600000); // rotates every 10 minutes
+
+
+
+  // -------------------------
+  // SLASH COMMAND REGISTRATION
+  // -------------------------
   const rest = new REST({ version: '10' }).setToken(process.env.TOKEN);
 
   await rest.put(
@@ -733,6 +767,7 @@ client.on('interactionCreate', async interaction => {
 // LOGIN
 // -------------------------
 client.login(process.env.TOKEN);
+
 
 
 
