@@ -399,9 +399,9 @@ client.on('ready', async () => {
 // -------------------------
 const statuses = [
   { name: "'How to Track Messages?'🤔", type: 3 },
-  { name: " some classical music", type: 2 },
+  { name: " some classical music🎻", type: 2 },
   { name: "live about Discord Messages and how they work💬", type: 1 },
-  { name: "System | Message Tracker", type: 0 }
+  { name: "System | Message Tracker <:SystemMessageTracker:1460287407076278385>", type: 0 }
 ];
 
 const statusModes = ["online", "idle", "dnd"];
@@ -768,6 +768,7 @@ client.on('interactionCreate', async interaction => {
 // LOGIN
 // -------------------------
 client.login(process.env.TOKEN);
+
 
 
 
