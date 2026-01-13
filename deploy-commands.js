@@ -113,23 +113,20 @@ const commands = [
         )
     )
 
-// After registering commands:
-const moderatorCmd = commands.find(cmd => cmd.name === "moderator");
-
-if (moderatorCmd) {
-  await rest.put(
-    Routes.applicationCommandPermissions(CLIENT_ID, GUILD_ID, moderatorCmd.id),
-    {
-      body: [
-        {
-          id: "1262577043309072426", // me
-          type: 2,                   // USER
-          permission: true           // allow only you
-        }
-      ]
-    }
+// moderator command with backupwarns subcommand
+const moderatorCommand = new SlashCommandBuilder()
+  .setName('moderator')
+  .setDescription('Moderator tools')
+  .addSubcommand(sub =>
+    sub
+      .setName('backupwarns')
+      .setDescription('Get a full JSON backup of all warnings and autopunish rules')
+      .setDefaultMemberPermissions(null)
+      .setDMPermission(false)
   );
-}
+
+// Push into your commands array
+commands.push(moderatorCommand.toJSON());
 
 
     // -------------------------
@@ -213,4 +210,5 @@ const rest = new REST({ version: '10' }).setToken(TOKEN);
     console.error(error);
   }
 })();
+
 
