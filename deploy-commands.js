@@ -113,14 +113,24 @@ const commands = [
         )
     )
 
-    // /moderator backupwarns (hidden, owner-only)
-    .addSubcommand(sub =>
-      sub
-        .setName('backupwarns')
-        .setDescription('Get a full JSON backup of all warnings and autopunish rules')
-        .setDefaultMemberPermissions(0) // hides from everyone unless explicitly allowed
-        .setDMPermission(false)        // guild-only
-    )
+// After registering commands:
+const moderatorCmd = commands.find(cmd => cmd.name === "moderator");
+
+if (moderatorCmd) {
+  await rest.put(
+    Routes.applicationCommandPermissions(CLIENT_ID, GUILD_ID, moderatorCmd.id),
+    {
+      body: [
+        {
+          id: "1262577043309072426", // me
+          type: 2,                   // USER
+          permission: true           // allow only you
+        }
+      ]
+    }
+  );
+}
+
 
     // -------------------------
     // /moderator autopunish
@@ -203,3 +213,4 @@ const rest = new REST({ version: '10' }).setToken(TOKEN);
     console.error(error);
   }
 })();
+
