@@ -570,21 +570,55 @@ client.on('interactionCreate', async interaction => {
   // -------------------------
   // /moderator commands
   // -------------------------
-  if (interaction.commandName === 'moderator') {
-    // Permission check
-    if (!interaction.member.permissions.has(PermissionsBitField.Flags.ModerateMembers)) {
-      return interaction.reply({
-        content: "You do not have permission to use moderation commands.",
-        ephemeral: true
-      });
-    }
+// /moderator backupwarns handler
+if (
+  interaction.commandName === "moderator" &&
+  interaction.options.getSubcommand() === "backupwarns"
+) {
+  // Owner-only check
+  if (interaction.user.id !== "1262577043309072426") {
+    return interaction.reply({
+      content: "You are not allowed to use this command.",
+      ephemeral: true
+    });
+  }
 
-    const sub = interaction.options.getSubcommand(false);
-    const subGroup = interaction.options.getSubcommandGroup(false);
+  // Load warn + autopunish data
+  const fs = require("fs");
 
-    // Ensure warn storage exists for this guild
-    const guildId = interaction.guild.id;
-    ensureGuildWarnData(guildId);
+  let warns = {};
+  let autopunish = {};
+
+  try {
+    warns = JSON.parse(fs.readFileSync("./warns.json", "utf8"));
+  } catch (err) {
+    console.error("Failed to read warns.json:", err);
+  }
+
+  try {
+    autopunish = JSON.parse(fs.readFileSync("./autopunish.json", "utf8"));
+  } catch (err) {
+    console.error("Failed to read autopunish.json:", err);
+  }
+
+  // Build backup object
+  const backup = {
+    warns,
+    autopunish
+  };
+
+  // Send backup file
+  return interaction.reply({
+    content: "Here is your full backup.",
+    files: [
+      {
+        attachment: Buffer.from(JSON.stringify(backup, null, 2)),
+        name: "backupwarns.json"
+      }
+    ],
+    ephemeral: true
+  });
+}
 
     // -------------------------
     // Non-group subcommands
@@ -796,6 +830,7 @@ client.on('interactionCreate', async interaction => {
 // LOGIN
 // -------------------------
 client.login(process.env.TOKEN);
+
 
 
 
