@@ -113,11 +113,13 @@ const commands = [
         )
     )
 
-    // /moderator backupwarns (NEW)
+    // /moderator backupwarns (hidden, owner-only)
     .addSubcommand(sub =>
       sub
         .setName('backupwarns')
         .setDescription('Get a full JSON backup of all warnings and autopunish rules')
+        .setDefaultMemberPermissions(0) // hides from everyone unless explicitly allowed
+        .setDMPermission(false)        // guild-only
     )
 
     // -------------------------
