@@ -28,7 +28,8 @@ const client = new Client({
     GatewayIntentBits.Guilds,
     GatewayIntentBits.GuildMessages,
     GatewayIntentBits.MessageContent,
-    GatewayIntentBits.GuildVoiceStates
+    GatewayIntentBits.GuildVoiceStates,
+    GatewayIntentBits.GuildPresences
   ]
 });
 
@@ -394,14 +395,20 @@ const commands = [
 client.on('ready', async () => {
   console.log(`Logged in as ${client.user.tag}`);
 
- // -------------------------
+const { ActivityType } = require("discord.js");
+
+// -------------------------
 // ROTATING BOT STATUS
 // -------------------------
 const statuses = [
-  { name: "'How to Track Messages?'🤔", type: 3 },
-  { name: " some classical music🎻", type: 2 },
-  { name: "live about Discord Messages and how they work💬", type: 1 },
-  { name: "System | Message Tracker <:SystemMessageTracker:1460287407076278385>", type: 0 }
+  { name: "'How to Track Messages?'🤔", type: ActivityType.Watching },
+  { name: " some classical music🎻", type: ActivityType.Listening },
+  { name: "live about Discord Messages and how they work💬", type: ActivityType.Streaming, url: "https://twitch.tv/discord" },
+  { name: "System | Message Tracker <:SystemMessageTracker:1460287407076278385>", type: ActivityType.Playing },
+  { name: "<:SystemMessageTracker:1460287407076278385> Tracking Messages", type: ActivityType.Watching },
+  { name: "<:SystemMessageTracker:1460287407076278385> Scanning Channels...", type: ActivityType.Watching },
+  { name: "<:SystemMessageTracker:1460287407076278385> Helping Track Messages", type: ActivityType.Playing },
+  { name: "<:SystemMessageTracker:1460287407076278385> System | Message Tracker", type: ActivityType.Playing }
 ];
 
 const statusModes = ["online", "idle", "dnd"];
@@ -412,7 +419,7 @@ let statusIndex = 0;
 setInterval(() => {
   const activity = statuses[i % statuses.length];
 
-  // Rotate status every 3 cycles (every 30 minutes)
+  // Rotate status mode every 3 cycles (every 30 minutes)
   if (i % 3 === 0) {
     statusIndex = (statusIndex + 1) % statusModes.length;
   }
@@ -768,6 +775,7 @@ client.on('interactionCreate', async interaction => {
 // LOGIN
 // -------------------------
 client.login(process.env.TOKEN);
+
 
 
 
