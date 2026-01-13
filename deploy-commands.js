@@ -113,6 +113,13 @@ const commands = [
         )
     )
 
+    // /moderator backupwarns (NEW)
+    .addSubcommand(sub =>
+      sub
+        .setName('backupwarns')
+        .setDescription('Get a full JSON backup of all warnings and autopunish rules')
+    )
+
     // -------------------------
     // /moderator autopunish
     // -------------------------
@@ -194,6 +201,3 @@ const rest = new REST({ version: '10' }).setToken(TOKEN);
     console.error(error);
   }
 })();
-
-
-
