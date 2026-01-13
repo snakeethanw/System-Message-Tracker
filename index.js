@@ -239,7 +239,11 @@ async function applyAutoPunish(interaction, member, currentWarnings, lastDuratio
 // SLASH COMMANDS
 // -------------------------
 const commands = [
-  // Message analysis
+  //
+  // ───────────────────────────────────────────────
+  // MESSAGE ANALYSIS COMMANDS
+  // ───────────────────────────────────────────────
+  //
   new SlashCommandBuilder()
     .setName('messages')
     .setDescription('Message analysis tools')
@@ -248,12 +252,14 @@ const commands = [
         .setName('count')
         .setDescription('Count messages in a channel over a time period')
         .addChannelOption(opt =>
-          opt.setName('channel')
+          opt
+            .setName('channel')
             .setDescription('Channel to analyze')
             .setRequired(true)
         )
         .addStringOption(opt =>
-          opt.setName('period')
+          opt
+            .setName('period')
             .setDescription('Time period (e.g., 1h, 24h, 7d)')
             .setRequired(true)
         )
@@ -263,123 +269,149 @@ const commands = [
         .setName('users')
         .setDescription('See which users sent messages in a time period')
         .addChannelOption(opt =>
-          opt.setName('channel')
+          opt
+            .setName('channel')
             .setDescription('Channel to analyze')
             .setRequired(true)
         )
         .addStringOption(opt =>
-          opt.setName('period')
+          opt
+            .setName('period')
             .setDescription('Time period (e.g., 1h, 24h, 7d)')
             .setRequired(true)
         )
     ),
 
-  // Moderator tools
+  //
+  // ───────────────────────────────────────────────
+  // MODERATOR COMMANDS
+  // ───────────────────────────────────────────────
+  //
   new SlashCommandBuilder()
     .setName('moderator')
     .setDescription('Moderation tools')
+
     // /moderator warn
     .addSubcommand(sub =>
       sub
         .setName('warn')
         .setDescription('Warn a member')
         .addUserOption(opt =>
-          opt.setName('user')
+          opt
+            .setName('user')
             .setDescription('User to warn')
             .setRequired(true)
         )
         .addStringOption(opt =>
-          opt.setName('reason')
+          opt
+            .setName('reason')
             .setDescription('Reason for the warning')
             .setRequired(true)
         )
     )
+
     // /moderator timeout
     .addSubcommand(sub =>
       sub
         .setName('timeout')
         .setDescription('Timeout a member and add a warning')
         .addUserOption(opt =>
-          opt.setName('user')
+          opt
+            .setName('user')
             .setDescription('User to timeout')
             .setRequired(true)
         )
         .addStringOption(opt =>
-          opt.setName('duration')
+          opt
+            .setName('duration')
             .setDescription('Duration (e.g., 10m, 1h, 2d)')
             .setRequired(true)
         )
         .addStringOption(opt =>
-          opt.setName('reason')
+          opt
+            .setName('reason')
             .setDescription('Reason for timeout')
             .setRequired(true)
         )
     )
+
     // /moderator warnings
     .addSubcommand(sub =>
       sub
         .setName('warnings')
         .setDescription('Check how many warnings a member has')
         .addUserOption(opt =>
-          opt.setName('user')
+          opt
+            .setName('user')
             .setDescription('User to check')
             .setRequired(true)
         )
     )
+
     // /moderator clearwarns
     .addSubcommand(sub =>
       sub
         .setName('clearwarns')
         .setDescription('Clear all warnings for a member')
         .addUserOption(opt =>
-          opt.setName('user')
+          opt
+            .setName('user')
             .setDescription('User to clear warnings for')
             .setRequired(true)
         )
     )
-    // /moderator autopunish add/remove/list/clear
+
+    // /moderator autopunish group
     .addSubcommandGroup(group =>
       group
         .setName('autopunish')
         .setDescription('Configure auto-punishment rules')
+
         // /moderator autopunish add
         .addSubcommand(sub =>
           sub
             .setName('add')
             .setDescription('Add an auto-timeout rule')
             .addIntegerOption(opt =>
-              opt.setName('warnings')
+              opt
+                .setName('warnings')
                 .setDescription('Number of warnings to trigger this rule')
                 .setRequired(true)
             )
             .addStringOption(opt =>
-              opt.setName('duration')
+              opt
+                .setName('duration')
                 .setDescription('Timeout duration (e.g., 10m, 1h, 2d)')
                 .setRequired(true)
             )
             .addStringOption(opt =>
-              opt.setName('reason')
+              opt
+                .setName('reason')
                 .setDescription('Optional reason template (use {however long the timeout was})')
                 .setRequired(false)
             )
         )
+
         // /moderator autopunish remove
         .addSubcommand(sub =>
           sub
             .setName('remove')
             .setDescription('Remove an auto-timeout rule by warning count')
             .addIntegerOption(opt =>
-              opt.setName('warnings')
+              opt
+                .setName('warnings')
                 .setDescription('Warning count of the rule to remove')
                 .setRequired(true)
             )
         )
+
         // /moderator autopunish list
         .addSubcommand(sub =>
           sub
             .setName('list')
             .setDescription('List all auto-timeout rules')
         )
+
         // /moderator autopunish clear
         .addSubcommand(sub =>
           sub
@@ -388,80 +420,6 @@ const commands = [
         )
     )
 ].map(cmd => cmd.toJSON());
-
-// -------------------------
-// REGISTER SLASH COMMANDS & STARTUP LOGIC
-// -------------------------
-client.on('ready', async () => {
-  console.log(`Logged in as ${client.user.tag}`);
-
-const { ActivityType } = require("discord.js");
-
-// -------------------------
-// ROTATING BOT STATUS
-// -------------------------
-const statuses = [
-  { name: "'How to Track Messages?'🤔", type: ActivityType.Watching },
-  { name: " some classical music🎻", type: ActivityType.Listening },
-  { name: "live about Discord Messages and how they work💬", type: ActivityType.Streaming, url: "https://twitch.tv/discord" },
-  { name: "System | Message Tracker <:SystemMessageTracker:1460287407076278385>", type: ActivityType.Playing },
-  { name: "<:SystemMessageTracker:1460287407076278385> Tracking Messages", type: ActivityType.Watching },
-  { name: "<:SystemMessageTracker:1460287407076278385> Scanning Channels...", type: ActivityType.Watching },
-  { name: "<:SystemMessageTracker:1460287407076278385> Helping Track Messages", type: ActivityType.Playing },
-  { name: "<:SystemMessageTracker:1460287407076278385> System | Message Tracker", type: ActivityType.Playing }
-];
-
-const statusModes = ["online", "idle", "dnd"];
-
-let i = 0;
-let statusIndex = 0;
-
-setInterval(() => {
-  const activity = statuses[i % statuses.length];
-
-  // Rotate status mode every 3 cycles (every 30 minutes)
-  if (i % 3 === 0) {
-    statusIndex = (statusIndex + 1) % statusModes.length;
-  }
-
-  client.user.setPresence({
-    activities: [activity],
-    status: statusModes[statusIndex]
-  });
-
-  i++;
-}, 600000); // 10 minutes
-
-
-  // -------------------------
-  // SLASH COMMAND REGISTRATION
-  // -------------------------
-  const rest = new REST({ version: '10' }).setToken(process.env.TOKEN);
-
-  await rest.put(
-    Routes.applicationCommands(client.user.id),
-    { body: commands }
-  );
-
-  console.log("Slash commands registered.");
-
-  for (const [id, guild] of client.guilds.cache) {
-    if (!messageCounts[guild.id]) {
-      messageCounts[guild.id] = { count: 0, scanned: false };
-    }
-
-    if (!messageCounts[guild.id].scanned) {
-      const total = await countHistoricalMessages(guild);
-      messageCounts[guild.id] = { count: total, scanned: true };
-      saveData();
-    }
-
-    await getOrCreateCounterChannel(guild);
-
-    // Ensure warn data structure exists
-    ensureGuildWarnData(guild.id);
-  }
-});
 
 // -------------------------
 // SLASH COMMAND HANDLER
@@ -830,6 +788,7 @@ if (
 // LOGIN
 // -------------------------
 client.login(process.env.TOKEN);
+
 
 
 
