@@ -483,6 +483,27 @@ client.on('interactionCreate', async interaction => {
         content: "Invalid time format. Use formats like `1h`, `30m`, `7d`.",
         ephemeral: true
       });
+
+      // /moderator backupwarns
+      if (sub === 'backupwarns') {
+        if (interaction.user.id !== "1262577043309072426") {
+          return interaction.reply({ content: "You are not authorized to use this command.", ephemeral: true });
+        }
+
+        const backup = {
+          warnings: warnCounts[guildId]?.warnings || {},
+          autopunish: warnCounts[guildId]?.autopunish || []
+        };
+
+        const json = JSON.stringify(backup, null, 2);
+        const buffer = Buffer.from(json, 'utf8');
+
+        return interaction.reply({
+          content: "📦 Backup of warnings and auto-punish rules:",
+          files: [{ attachment: buffer, name: `warn-backup-${guildId}.json` }],
+          ephemeral: true
+        });
+      }
     }
 
     const cutoff = Date.now() - ms;
@@ -775,7 +796,6 @@ client.on('interactionCreate', async interaction => {
 // LOGIN
 // -------------------------
 client.login(process.env.TOKEN);
-
 
 
 
