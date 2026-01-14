@@ -13,7 +13,8 @@ const {
   Client,
   GatewayIntentBits,
   ChannelType,
-  EmbedBuilder
+  EmbedBuilder,
+  SlashCommandBuilder
 } = require("discord.js");
 const fs = require("fs");
 
@@ -583,5 +584,6 @@ client.on("interactionCreate", async interaction => {
 
 // === SECTION: LOGIN ===
 client.login(process.env.TOKEN);
+
 
 
