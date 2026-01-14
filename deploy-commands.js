@@ -1,214 +1,159 @@
-const { REST, Routes, SlashCommandBuilder } = require('discord.js');
-require('dotenv').config();
+// === SECTION: IMPORTS ===
+const { REST, Routes, SlashCommandBuilder } = require("discord.js");
+require("dotenv").config();
 
-// -------------------------
-// DEFINE SLASH COMMANDS
-// -------------------------
-const commands = [
+// === SECTION: COMMAND ARRAY ===
+const commands = [];
 
-  // -------------------------
-  // /messages
-  // -------------------------
+// === SECTION: /messages COMMAND ===
+commands.push(
   new SlashCommandBuilder()
-    .setName('messages')
-    .setDescription('Message analysis tools')
+    .setName("messages")
+    .setDescription("Message analysis tools")
     .addSubcommand(sub =>
       sub
-        .setName('count')
-        .setDescription('Count messages in a channel over a time period')
-        .addChannelOption(opt =>
-          opt.setName('channel')
-            .setDescription('Channel to analyze')
-            .setRequired(true)
+        .setName("count")
+        .setDescription("Count messages in a channel over a time period")
+        .addChannelOption(o =>
+          o.setName("channel").setDescription("Channel").setRequired(true)
         )
-        .addStringOption(opt =>
-          opt.setName('period')
-            .setDescription('Time period (e.g., 1h, 24h, 7d)')
-            .setRequired(true)
+        .addStringOption(o =>
+          o.setName("period").setDescription("1h, 24h, 7d").setRequired(true)
         )
     )
     .addSubcommand(sub =>
       sub
-        .setName('users')
-        .setDescription('See which users sent messages in a time period')
-        .addChannelOption(opt =>
-          opt.setName('channel')
-            .setDescription('Channel to analyze')
-            .setRequired(true)
+        .setName("users")
+        .setDescription("List users active in a time period")
+        .addChannelOption(o =>
+          o.setName("channel").setDescription("Channel").setRequired(true)
         )
-        .addStringOption(opt =>
-          opt.setName('period')
-            .setDescription('Time period (e.g., 1h, 24h, 7d)')
-            .setRequired(true)
+        .addStringOption(o =>
+          o.setName("period").setDescription("1h, 24h, 7d").setRequired(true)
         )
-    ),
+    )
+    .toJSON()
+);
 
-  // -------------------------
-  // /moderator
-  // -------------------------
+// === SECTION: /moderator COMMAND ===
+commands.push(
   new SlashCommandBuilder()
-    .setName('moderator')
-    .setDescription('Moderation tools')
+    .setName("moderator")
+    .setDescription("Moderation tools")
 
-    // /moderator warn
     .addSubcommand(sub =>
       sub
-        .setName('warn')
-        .setDescription('Warn a member')
-        .addUserOption(opt =>
-          opt.setName('user')
-            .setDescription('User to warn')
-            .setRequired(true)
+        .setName("warn")
+        .setDescription("Warn a member")
+        .addUserOption(o =>
+          o.setName("user").setDescription("User").setRequired(true)
         )
-        .addStringOption(opt =>
-          opt.setName('reason')
-            .setDescription('Reason for the warning')
-            .setRequired(true)
+        .addStringOption(o =>
+          o.setName("reason").setDescription("Reason").setRequired(true)
         )
     )
 
-    // /moderator timeout
     .addSubcommand(sub =>
       sub
-        .setName('timeout')
-        .setDescription('Timeout a member and add a warning')
-        .addUserOption(opt =>
-          opt.setName('user')
-            .setDescription('User to timeout')
-            .setRequired(true)
+        .setName("timeout")
+        .setDescription("Timeout a member")
+        .addUserOption(o =>
+          o.setName("user").setDescription("User").setRequired(true)
         )
-        .addStringOption(opt =>
-          opt.setName('duration')
-            .setDescription('Duration (e.g., 10m, 1h, 2d)')
-            .setRequired(true)
+        .addStringOption(o =>
+          o.setName("duration").setDescription("10m, 1h, 2d").setRequired(true)
         )
-        .addStringOption(opt =>
-          opt.setName('reason')
-            .setDescription('Reason for timeout')
-            .setRequired(true)
+        .addStringOption(o =>
+          o.setName("reason").setDescription("Reason").setRequired(true)
         )
     )
 
-    // /moderator warnings
     .addSubcommand(sub =>
       sub
-        .setName('warnings')
-        .setDescription('Check how many warnings a member has')
-        .addUserOption(opt =>
-          opt.setName('user')
-            .setDescription('User to check')
-            .setRequired(true)
+        .setName("warnings")
+        .setDescription("Check warnings")
+        .addUserOption(o =>
+          o.setName("user").setDescription("User").setRequired(true)
         )
     )
 
-    // /moderator clearwarns
     .addSubcommand(sub =>
       sub
-        .setName('clearwarns')
-        .setDescription('Clear all warnings for a member')
-        .addUserOption(opt =>
-          opt.setName('user')
-            .setDescription('User to clear warnings for')
-            .setRequired(true)
+        .setName("clearwarns")
+        .setDescription("Clear warnings")
+        .addUserOption(o =>
+          o.setName("user").setDescription("User").setRequired(true)
         )
     )
 
-// moderator command with backupwarns subcommand
-const moderatorCommand = new SlashCommandBuilder()
-  .setName('moderator')
-  .setDescription('Moderator tools')
-  .addSubcommand(sub =>
-    sub
-      .setName('backupwarns')
-      .setDescription('Get a full JSON backup of all warnings and autopunish rules')
-      .setDefaultMemberPermissions(null)
-      .setDMPermission(false)
-  );
+    .addSubcommand(sub =>
+      sub.setName("backupwarns").setDescription("Backup warn data")
+    )
 
-// Push into your commands array
-commands.push(moderatorCommand.toJSON());
+    .addSubcommand(sub =>
+      sub.setName("backupmessages").setDescription("Backup message data")
+    )
 
-
-    // -------------------------
-    // /moderator autopunish
-    // -------------------------
     .addSubcommandGroup(group =>
       group
-        .setName('autopunish')
-        .setDescription('Configure auto-punishment rules')
+        .setName("autopunish")
+        .setDescription("Auto-timeout rules")
 
-        // /moderator autopunish add
         .addSubcommand(sub =>
           sub
-            .setName('add')
-            .setDescription('Add an auto-timeout rule')
-            .addIntegerOption(opt =>
-              opt.setName('warnings')
-                .setDescription('Number of warnings to trigger this rule')
-                .setRequired(true)
+            .setName("add")
+            .setDescription("Add rule")
+            .addIntegerOption(o =>
+              o.setName("warnings").setDescription("Count").setRequired(true)
             )
-            .addStringOption(opt =>
-              opt.setName('duration')
-                .setDescription('Timeout duration (e.g., 10m, 1h, 2d)')
-                .setRequired(true)
+            .addStringOption(o =>
+              o.setName("duration").setDescription("10m, 1h").setRequired(true)
             )
-            .addStringOption(opt =>
-              opt.setName('reason')
-                .setDescription('Optional reason template (use {however long the timeout was})')
-                .setRequired(false)
+            .addStringOption(o =>
+              o.setName("reason").setDescription("Template").setRequired(false)
             )
         )
 
-        // /moderator autopunish remove
         .addSubcommand(sub =>
           sub
-            .setName('remove')
-            .setDescription('Remove an auto-timeout rule by warning count')
-            .addIntegerOption(opt =>
-              opt.setName('warnings')
-                .setDescription('Warning count of the rule to remove')
-                .setRequired(true)
+            .setName("remove")
+            .setDescription("Remove rule")
+            .addIntegerOption(o =>
+              o.setName("warnings").setDescription("Count").setRequired(true)
             )
         )
 
-        // /moderator autopunish list
         .addSubcommand(sub =>
-          sub
-            .setName('list')
-            .setDescription('List all auto-timeout rules')
+          sub.setName("list").setDescription("List rules")
         )
 
-        // /moderator autopunish clear
         .addSubcommand(sub =>
-          sub
-            .setName('clear')
-            .setDescription('Clear all auto-timeout rules')
+          sub.setName("clear").setDescription("Clear rules")
         )
     )
 
-].map(cmd => cmd.toJSON());
+    .toJSON()
+);
 
-// -------------------------
-// DEPLOY COMMANDS
-// -------------------------
-const TOKEN = process.env.token;
-const CLIENT_ID = '1458665352853586057';
+// === SECTION: DEPLOY ===
+const TOKEN = process.env.TOKEN;
+const CLIENT_ID = process.env.CLIENT_ID;
 
-const rest = new REST({ version: '10' }).setToken(TOKEN);
+const rest = new REST({ version: "10" }).setToken(TOKEN);
 
 (async () => {
   try {
-    console.log('🚀 Deploying slash commands...');
+    console.log("Deploying slash commands...");
 
-    await rest.put(
-      Routes.applicationCommands(CLIENT_ID),
-      { body: commands }
-    );
+    await rest.put(Routes.applicationCommands(CLIENT_ID), {
+      body: commands
+    });
 
-    console.log('✅ Slash commands deployed globally.');
-  } catch (error) {
-    console.error(error);
+    console.log("Slash commands deployed globally.");
+  } catch (err) {
+    console.error(err);
   }
 })();
+
 
 
