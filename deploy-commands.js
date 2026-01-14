@@ -145,9 +145,19 @@ const rest = new REST({ version: "10" }).setToken(TOKEN);
   try {
     console.log("Deploying slash commands...");
 
-    await rest.put(Routes.applicationCommands(CLIENT_ID), {
-      body: commands
-    });
+const GUILDS = [
+  "1434679299549564960",
+  "1323106269745381396"
+];
+
+for (const guildId of GUILDS) {
+  await rest.put(
+    Routes.applicationGuildCommands(CLIENT_ID, guildId),
+    { body: commands }
+  );
+  console.log(`Commands deployed to guild ${guildId}`);
+}
+
 
     console.log("Slash commands deployed globally.");
   } catch (err) {
@@ -155,6 +165,7 @@ const rest = new REST({ version: "10" }).setToken(TOKEN);
   }
 })();
 //repurpose
+
 
 
 
