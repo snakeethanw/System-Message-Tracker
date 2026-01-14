@@ -1,28 +1,23 @@
+// === SECTION: SERVER KEEP-ALIVE ===
 const http = require("http");
-const server = http.createServer((req, res) => {
-  res.writeHead(200, { "Content-Type": "text/plain" });
-  res.end("OK");
-});
-server.listen(process.env.PORT || 3000);
+http
+  .createServer((req, res) => {
+    res.writeHead(200, { "Content-Type": "text/plain" });
+    res.end("OK");
+  })
+  .listen(process.env.PORT || 3000);
 
+// === SECTION: IMPORTS ===
 require("dotenv").config();
-const token = process.env.TOKEN;
-
 const {
   Client,
   GatewayIntentBits,
   ChannelType,
-  SlashCommandBuilder,
-  Routes,
-  REST,
-  EmbedBuilder,
-  PermissionsBitField
-} = require('discord.js');
-const fs = require('fs');
+  EmbedBuilder
+} = require("discord.js");
+const fs = require("fs");
 
-// -------------------------
-// BOT CLIENT
-// -------------------------
+// === SECTION: CLIENT INITIALIZATION ===
 const client = new Client({
   intents: [
     GatewayIntentBits.Guilds,
@@ -38,42 +33,30 @@ client.on("debug", console.log);
 client.on("shardError", console.error);
 process.on("unhandledRejection", console.error);
 
-// -------------------------
-// MESSAGE COUNTER STORAGE
-// -------------------------
-const dataFile = './messageCounts.json';
+// === SECTION: STORAGE: MESSAGE COUNTS ===
+const messageFile = "./messageCounts.json";
 let messageCounts = {};
 let lastUpdate = {};
 
-if (fs.existsSync(dataFile)) {
+if (fs.existsSync(messageFile)) {
   try {
-    messageCounts = JSON.parse(fs.readFileSync(dataFile, 'utf8'));
+    messageCounts = JSON.parse(fs.readFileSync(messageFile, "utf8"));
   } catch {
     messageCounts = {};
   }
 }
 
-function saveData() {
-  fs.writeFileSync(dataFile, JSON.stringify(messageCounts, null, 2));
+function saveMessageCounts() {
+  fs.writeFileSync(messageFile, JSON.stringify(messageCounts, null, 2));
 }
 
-// -------------------------
-// WARNING STORAGE
-// -------------------------
-const warnFile = './warnCounts.json';
+// === SECTION: STORAGE: WARN COUNTS ===
+const warnFile = "./warnCounts.json";
 let warnCounts = {};
-
-// Structure:
-// warnCounts = {
-//   [guildId]: {
-//     warnings: { [userId]: number },
-//     autopunish: [ { warnings: number, duration: string, reason?: string } ]
-//   }
-// }
 
 if (fs.existsSync(warnFile)) {
   try {
-    warnCounts = JSON.parse(fs.readFileSync(warnFile, 'utf8'));
+    warnCounts = JSON.parse(fs.readFileSync(warnFile, "utf8"));
   } catch {
     warnCounts = {};
   }
@@ -85,82 +68,67 @@ function saveWarns() {
 
 function ensureGuildWarnData(guildId) {
   if (!warnCounts[guildId]) {
-    warnCounts[guildId] = {
-      warnings: {},
-      autopunish: []
-    };
+    warnCounts[guildId] = { warnings: {}, autopunish: [] };
   }
-  if (!warnCounts[guildId].warnings) warnCounts[guildId].warnings = {};
-  if (!Array.isArray(warnCounts[guildId].autopunish)) warnCounts[guildId].autopunish = [];
 }
 
-// -------------------------
-// CREATE OR FIND COUNTER CHANNEL
-// -------------------------
-async function getOrCreateCounterChannel(guild) {
-  let channel = guild.channels.cache.find(
-    ch => ch.type === ChannelType.GuildVoice && ch.name.startsWith("Messages:")
+// === SECTION: STORAGE: HISTORICAL COUNTS ===
+const historicalFile = "./historicalCounts.json";
+let historicalCounts = null;
+
+if (fs.existsSync(historicalFile)) {
+  try {
+    historicalCounts = JSON.parse(fs.readFileSync(historicalFile, "utf8"));
+  } catch {
+    historicalCounts = null;
+  }
+}
+
+// === SECTION: HELPERS ===
+function parsePeriod(str) {
+  const match = str.match(/^(\d+)(s|m|h|d)$/);
+  if (!match) return null;
+
+  const num = parseInt(match[1]);
+  const unit = match[2];
+
+  const map = {
+    s: 1000,
+    m: 60000,
+    h: 3600000,
+    d: 86400000
+  };
+
+  return num * map[unit];
+}
+
+async function applyAutoPunish(interaction, member, currentWarnings) {
+  const guildId = interaction.guild.id;
+  ensureGuildWarnData(guildId);
+
+  const rules = warnCounts[guildId].autopunish;
+  const rule = rules.find(r => r.warnings === currentWarnings);
+  if (!rule) return null;
+
+  const ms = parsePeriod(rule.duration);
+  if (!ms) return null;
+
+  const reason = (rule.reason || "Timeout applied for {duration}.").replace(
+    "{duration}",
+    rule.duration
   );
 
-  if (!channel) {
-    const count = messageCounts[guild.id]?.count || 0;
-
-    channel = await guild.channels.create({
-      name: `Messages: ${count}`,
-      type: ChannelType.GuildVoice,
-      reason: 'Message counter channel'
-    });
+  try {
+    await member.timeout(ms, reason);
+  } catch {
+    return "Attempted auto-timeout but lacked permissions.";
   }
 
-  return channel;
+  return `Auto-timeout applied for **${rule.duration}**.`;
 }
 
-// -------------------------
-// HISTORICAL MESSAGE SCAN
-// -------------------------
-async function countHistoricalMessages(guild) {
-  console.log(`Starting historical scan for guild: ${guild.name}`);
-
-  let total = 0;
-
-  const textChannels = guild.channels.cache.filter(
-    ch => ch.type === ChannelType.GuildText
-  );
-
-  for (const [id, channel] of textChannels) {
-    console.log(`Scanning #${channel.name} in ${guild.name}`);
-
-    let lastId = null;
-
-    while (true) {
-      const options = { limit: 100 };
-      if (lastId) options.before = lastId;
-
-      let msgs;
-      try {
-        msgs = await channel.messages.fetch(options);
-      } catch {
-        console.log(`Skipping #${channel.name} (no access or error).`);
-        break;
-      }
-
-      if (msgs.size === 0) break;
-
-      total += msgs.size;
-      lastId = msgs.last().id;
-
-      await new Promise(res => setTimeout(res, 500));
-    }
-  }
-
-  console.log(`Historical scan complete for ${guild.name}. Total messages: ${total}`);
-  return total;
-}
-
-// -------------------------
-// MESSAGE EVENT (NEW MESSAGES)
-// -------------------------
-client.on('messageCreate', async (message) => {
+// === SECTION: MESSAGE EVENT ===
+client.on("messageCreate", async message => {
   if (!message.guild || message.author.bot) return;
 
   const guildId = message.guild.id;
@@ -170,634 +138,450 @@ client.on('messageCreate', async (message) => {
   }
 
   messageCounts[guildId].count++;
-  saveData();
+  saveMessageCounts();
 
   const now = Date.now();
   if (!lastUpdate[guildId] || now - lastUpdate[guildId] > 30000) {
     lastUpdate[guildId] = now;
 
-    const channel = await getOrCreateCounterChannel(message.guild);
-    if (channel && channel.manageable) {
+    let channel = message.guild.channels.cache.find(
+      ch => ch.type === ChannelType.GuildVoice && ch.name.startsWith("Messages:")
+    );
+
+    if (!channel) {
+      channel = await message.guild.channels.create({
+        name: `Messages: ${messageCounts[guildId].count}`,
+        type: ChannelType.GuildVoice
+      });
+    }
+
+    if (channel.manageable) {
       await channel.setName(`Messages: ${messageCounts[guildId].count}`);
     }
   }
 });
 
-// -------------------------
-// TIME PARSER
-// -------------------------
-function parsePeriod(str) {
-  const match = str.match(/^(\d+)(s|m|h|d)$/);
-  if (!match) return null;
-
-  const num = parseInt(match[1]);
-  const unit = match[2];
-
-  const multipliers = {
-    s: 1000,
-    m: 60000,
-    h: 3600000,
-    d: 86400000
-  };
-
-  return num * multipliers[unit];
-}
-
-// -------------------------
-// AUTO-PUNISHMENT HELPER
-// -------------------------
-async function applyAutoPunish(interaction, member, currentWarnings, lastDurationStr) {
-  const guildId = interaction.guild.id;
-  ensureGuildWarnData(guildId);
-
-  const rules = warnCounts[guildId].autopunish || [];
-  const rule = rules.find(r => r.warnings === currentWarnings);
-  if (!rule) return null;
-
-  const durationStr = rule.duration || lastDurationStr;
-  const ms = parsePeriod(durationStr);
-  if (!ms) return null;
-
-  const reasonTemplate =
-    rule.reason ||
-    "You have been warned to follow the rules, you are now on timeout for {duration}.";
-
-  // Replace {duration} with actual timeout length
-  const reason = reasonTemplate.replace("{duration}", durationStr);
-
-  try {
-    await member.timeout(ms, reason);
-  } catch (err) {
-    console.error("Failed to apply auto-punishment:", err);
-    return "Attempted to apply auto-timeout, but I don't have enough permissions or something went wrong.";
-  }
-
-  return `Auto-punishment applied: **${member.user.username}** has been timed out for **${durationStr}** (warnings: ${currentWarnings}).`;
-}
-
-// -------------------------
-// SLASH COMMANDS
-// -------------------------
+// === SECTION: SLASH COMMAND DEFINITIONS ===
 const commands = [
-  //
-  // ───────────────────────────────────────────────
-  // MESSAGE ANALYSIS COMMANDS
-  // ───────────────────────────────────────────────
-  //
   new SlashCommandBuilder()
-    .setName('messages')
-    .setDescription('Message analysis tools')
+    .setName("messages")
+    .setDescription("Message analysis tools")
     .addSubcommand(sub =>
       sub
-        .setName('count')
-        .setDescription('Count messages in a channel over a time period')
-        .addChannelOption(opt =>
-          opt
-            .setName('channel')
-            .setDescription('Channel to analyze')
-            .setRequired(true)
+        .setName("count")
+        .setDescription("Count messages in a channel over a time period")
+        .addChannelOption(o =>
+          o.setName("channel").setDescription("Channel").setRequired(true)
         )
-        .addStringOption(opt =>
-          opt
-            .setName('period')
-            .setDescription('Time period (e.g., 1h, 24h, 7d)')
-            .setRequired(true)
+        .addStringOption(o =>
+          o.setName("period").setDescription("1h, 24h, 7d").setRequired(true)
         )
     )
     .addSubcommand(sub =>
       sub
-        .setName('users')
-        .setDescription('See which users sent messages in a time period')
-        .addChannelOption(opt =>
-          opt
-            .setName('channel')
-            .setDescription('Channel to analyze')
-            .setRequired(true)
+        .setName("users")
+        .setDescription("List users active in a time period")
+        .addChannelOption(o =>
+          o.setName("channel").setDescription("Channel").setRequired(true)
         )
-        .addStringOption(opt =>
-          opt
-            .setName('period')
-            .setDescription('Time period (e.g., 1h, 24h, 7d)')
-            .setRequired(true)
+        .addStringOption(o =>
+          o.setName("period").setDescription("1h, 24h, 7d").setRequired(true)
         )
     ),
 
-  //
-  // ───────────────────────────────────────────────
-  // MODERATOR COMMANDS
-  // ───────────────────────────────────────────────
-  //
   new SlashCommandBuilder()
-    .setName('moderator')
-    .setDescription('Moderation tools')
-
-    // /moderator warn
+    .setName("moderator")
+    .setDescription("Moderation tools")
     .addSubcommand(sub =>
       sub
-        .setName('warn')
-        .setDescription('Warn a member')
-        .addUserOption(opt =>
-          opt
-            .setName('user')
-            .setDescription('User to warn')
-            .setRequired(true)
+        .setName("warn")
+        .setDescription("Warn a member")
+        .addUserOption(o =>
+          o.setName("user").setDescription("User").setRequired(true)
         )
-        .addStringOption(opt =>
-          opt
-            .setName('reason')
-            .setDescription('Reason for the warning')
-            .setRequired(true)
+        .addStringOption(o =>
+          o.setName("reason").setDescription("Reason").setRequired(true)
         )
     )
-
-    // /moderator timeout
     .addSubcommand(sub =>
       sub
-        .setName('timeout')
-        .setDescription('Timeout a member and add a warning')
-        .addUserOption(opt =>
-          opt
-            .setName('user')
-            .setDescription('User to timeout')
-            .setRequired(true)
+        .setName("timeout")
+        .setDescription("Timeout a member")
+        .addUserOption(o =>
+          o.setName("user").setDescription("User").setRequired(true)
         )
-        .addStringOption(opt =>
-          opt
-            .setName('duration')
-            .setDescription('Duration (e.g., 10m, 1h, 2d)')
-            .setRequired(true)
+        .addStringOption(o =>
+          o.setName("duration").setDescription("10m, 1h, 2d").setRequired(true)
         )
-        .addStringOption(opt =>
-          opt
-            .setName('reason')
-            .setDescription('Reason for timeout')
-            .setRequired(true)
+        .addStringOption(o =>
+          o.setName("reason").setDescription("Reason").setRequired(true)
         )
     )
-
-    // /moderator warnings
     .addSubcommand(sub =>
       sub
-        .setName('warnings')
-        .setDescription('Check how many warnings a member has')
-        .addUserOption(opt =>
-          opt
-            .setName('user')
-            .setDescription('User to check')
-            .setRequired(true)
+        .setName("warnings")
+        .setDescription("Check warnings")
+        .addUserOption(o =>
+          o.setName("user").setDescription("User").setRequired(true)
         )
     )
-
-    // /moderator clearwarns
     .addSubcommand(sub =>
       sub
-        .setName('clearwarns')
-        .setDescription('Clear all warnings for a member')
-        .addUserOption(opt =>
-          opt
-            .setName('user')
-            .setDescription('User to clear warnings for')
-            .setRequired(true)
+        .setName("clearwarns")
+        .setDescription("Clear warnings")
+        .addUserOption(o =>
+          o.setName("user").setDescription("User").setRequired(true)
         )
     )
-
-    // /moderator autopunish group
+    .addSubcommand(sub =>
+      sub.setName("backupwarns").setDescription("Backup warn data")
+    )
+    .addSubcommand(sub =>
+      sub.setName("backupmessages").setDescription("Backup message data")
+    )
     .addSubcommandGroup(group =>
       group
-        .setName('autopunish')
-        .setDescription('Configure auto-punishment rules')
-
-        // /moderator autopunish add
+        .setName("autopunish")
+        .setDescription("Auto-timeout rules")
         .addSubcommand(sub =>
           sub
-            .setName('add')
-            .setDescription('Add an auto-timeout rule')
-            .addIntegerOption(opt =>
-              opt
-                .setName('warnings')
-                .setDescription('Number of warnings to trigger this rule')
-                .setRequired(true)
+            .setName("add")
+            .setDescription("Add rule")
+            .addIntegerOption(o =>
+              o.setName("warnings").setDescription("Count").setRequired(true)
             )
-            .addStringOption(opt =>
-              opt
-                .setName('duration')
-                .setDescription('Timeout duration (e.g., 10m, 1h, 2d)')
-                .setRequired(true)
+            .addStringOption(o =>
+              o.setName("duration").setDescription("10m, 1h").setRequired(true)
             )
-            .addStringOption(opt =>
-              opt
-                .setName('reason')
-                .setDescription('Optional reason template (use {however long the timeout was})')
-                .setRequired(false)
+            .addStringOption(o =>
+              o.setName("reason").setDescription("Template").setRequired(false)
             )
         )
-
-        // /moderator autopunish remove
         .addSubcommand(sub =>
           sub
-            .setName('remove')
-            .setDescription('Remove an auto-timeout rule by warning count')
-            .addIntegerOption(opt =>
-              opt
-                .setName('warnings')
-                .setDescription('Warning count of the rule to remove')
-                .setRequired(true)
+            .setName("remove")
+            .setDescription("Remove rule")
+            .addIntegerOption(o =>
+              o.setName("warnings").setDescription("Count").setRequired(true)
             )
         )
-
-        // /moderator autopunish list
         .addSubcommand(sub =>
-          sub
-            .setName('list')
-            .setDescription('List all auto-timeout rules')
+          sub.setName("list").setDescription("List rules")
         )
-
-        // /moderator autopunish clear
         .addSubcommand(sub =>
-          sub
-            .setName('clear')
-            .setDescription('Clear all auto-timeout rules')
+          sub.setName("clear").setDescription("Clear rules")
         )
     )
-].map(cmd => cmd.toJSON());
+].map(c => c.toJSON());
 
-// -------------------------
-// SLASH COMMAND HANDLER
-// -------------------------
-client.on('interactionCreate', async interaction => {
+// === SECTION: SLASH COMMAND HANDLER ===
+client.on("interactionCreate", async interaction => {
   if (!interaction.isChatInputCommand()) return;
 
-  // -------------------------
-  // /messages commands
-  // -------------------------
-  if (interaction.commandName === 'messages') {
+  const guildId = interaction.guild.id;
+
+  // === /messages ===
+  if (interaction.commandName === "messages") {
     const sub = interaction.options.getSubcommand();
-    const channel = interaction.options.getChannel('channel');
-    const periodStr = interaction.options.getString('period');
+    const channel = interaction.options.getChannel("channel");
+    const periodStr = interaction.options.getString("period");
     const ms = parsePeriod(periodStr);
 
     if (!ms) {
       return interaction.reply({
-        content: "Invalid time format. Use formats like `1h`, `30m`, `7d`.",
+        content: "Invalid time format.",
         ephemeral: true
       });
-
-      // /moderator backupwarns
-      if (sub === 'backupwarns') {
-        if (interaction.user.id !== "1262577043309072426") {
-          return interaction.reply({ content: "You are not authorized to use this command.", ephemeral: true });
-        }
-
-        const backup = {
-          warnings: warnCounts[guildId]?.warnings || {},
-          autopunish: warnCounts[guildId]?.autopunish || []
-        };
-
-        const json = JSON.stringify(backup, null, 2);
-        const buffer = Buffer.from(json, 'utf8');
-
-        return interaction.reply({
-          content: "📦 Backup of warnings and auto-punish rules:",
-          files: [{ attachment: buffer, name: `warn-backup-${guildId}.json` }],
-          ephemeral: true
-        });
-      }
     }
 
     const cutoff = Date.now() - ms;
-
     let fetched = [];
     let lastId;
 
     while (true) {
-      const options = { limit: 100 };
-      if (lastId) options.before = lastId;
+      const opts = { limit: 100 };
+      if (lastId) opts.before = lastId;
 
-      const msgs = await channel.messages.fetch(options);
+      const msgs = await channel.messages.fetch(opts);
       if (msgs.size === 0) break;
 
       const filtered = msgs.filter(m => m.createdTimestamp >= cutoff);
       fetched.push(...filtered.values());
 
       lastId = msgs.last().id;
-
       if (msgs.last().createdTimestamp < cutoff) break;
     }
 
-    if (sub === 'count') {
+    if (sub === "count") {
       return interaction.reply(
-        `📊 **${fetched.length} messages** were sent in <#${channel.id}> over the last **${periodStr}**`
+        `**${fetched.length} messages** in <#${channel.id}> over **${periodStr}**`
       );
     }
 
-    if (sub === 'users') {
+    if (sub === "users") {
       const counts = {};
-
       for (const msg of fetched) {
-        const id = msg.author.id;
-        counts[id] = (counts[id] || 0) + 1;
+        counts[msg.author.id] = (counts[msg.author.id] || 0) + 1;
       }
 
       const sorted = Object.entries(counts)
         .sort((a, b) => b[1] - a[1])
         .map(([id, count]) => {
-          const user = interaction.client.users.cache.get(id);
-          const name = user ? user.username : `User ${id}`;
-          const avatar = user ? user.displayAvatarURL() : null;
-          return { name, count, avatar };
-        });
-
-      const description = sorted
-        .map(u => `**${u.name}** — ${u.count} messages`)
-        .join('\n') || "No messages found.";
+          const user = client.users.cache.get(id);
+          return `**${user ? user.username : id}** — ${count}`;
+        })
+        .join("\n") || "No messages.";
 
       const embed = new EmbedBuilder()
         .setTitle(`Users active in #${channel.name}`)
-        .setDescription(description)
-        .setColor(0x5865F2)
-        .setFooter({ text: `Period: ${periodStr}` });
-
-      if (sorted[0] && sorted[0].avatar) {
-        embed.setThumbnail(sorted[0].avatar);
-      }
+        .setDescription(sorted)
+        .setColor(0x5865f2);
 
       return interaction.reply({ embeds: [embed] });
     }
   }
 
-  // -------------------------
-  // /moderator commands
-  // -------------------------
-// /moderator backupwarns handler
-if (
-  interaction.commandName === "moderator" &&
-  interaction.options.getSubcommand() === "backupwarns"
-) {
-  // Owner-only check
-  if (interaction.user.id !== "1262577043309072426") {
-    return interaction.reply({
-      content: "You are not allowed to use this command.",
-      ephemeral: true
-    });
-  }
+  // === /moderator ===
+  if (interaction.commandName === "moderator") {
+    const sub = interaction.options.getSubcommand(false);
+    const subGroup = interaction.options.getSubcommandGroup(false);
 
-  // Load warn + autopunish data
-  const fs = require("fs");
+    ensureGuildWarnData(guildId);
 
-  let warns = {};
-  let autopunish = {};
-
-  try {
-    warns = JSON.parse(fs.readFileSync("./warns.json", "utf8"));
-  } catch (err) {
-    console.error("Failed to read warns.json:", err);
-  }
-
-  try {
-    autopunish = JSON.parse(fs.readFileSync("./autopunish.json", "utf8"));
-  } catch (err) {
-    console.error("Failed to read autopunish.json:", err);
-  }
-
-  // Build backup object
-  const backup = {
-    warns,
-    autopunish
-  };
-
-  // Send backup file
-  return interaction.reply({
-    content: "Here is your full backup.",
-    files: [
-      {
-        attachment: Buffer.from(JSON.stringify(backup, null, 2)),
-        name: "backupwarns.json"
-      }
-    ],
-    ephemeral: true
-  });
-}
-
-    // -------------------------
-    // Non-group subcommands
-    // -------------------------
-    if (!subGroup) {
-      // /moderator warn
-      if (sub === 'warn') {
-        const target = interaction.options.getUser('user');
-        const reason = interaction.options.getString('reason');
-        const member = interaction.guild.members.cache.get(target.id);
-
-        if (!member) {
-          return interaction.reply({ content: "User not found in this server.", ephemeral: true });
-        }
-
-        const guildData = warnCounts[guildId];
-        const warnings = guildData.warnings;
-
-        if (!warnings[target.id]) warnings[target.id] = 0;
-        warnings[target.id]++;
-        saveWarns();
-
-        const currentWarnings = warnings[target.id];
-
-        let autoMsg = await applyAutoPunish(interaction, member, currentWarnings, null);
-
-        let reply = `⚠️ **${target.username} has been warned.**\nReason: ${reason}\nTotal warnings: **${currentWarnings}**`;
-        if (autoMsg) reply += `\n\n${autoMsg}`;
-
-        return interaction.reply(reply);
+    // === backupwarns ===
+    if (sub === "backupwarns") {
+      if (interaction.user.id !== "1262577043309072426") {
+        return interaction.reply({
+          content: "Not authorized.",
+          ephemeral: true
+        });
       }
 
-      // /moderator timeout
-      if (sub === 'timeout') {
-        const target = interaction.options.getUser('user');
-        const durationStr = interaction.options.getString('duration');
-        const reason = interaction.options.getString('reason');
-        const member = interaction.guild.members.cache.get(target.id);
+      const backup = {
+        warnings: warnCounts[guildId].warnings,
+        autopunish: warnCounts[guildId].autopunish
+      };
 
-        if (!member) {
-          return interaction.reply({ content: "User not found in this server.", ephemeral: true });
-        }
-
-        const ms = parsePeriod(durationStr);
-        if (!ms) {
-          return interaction.reply({
-            content: "Invalid duration format. Use formats like `10m`, `1h`, `2d`.",
-            ephemeral: true
-          });
-        }
-
-        try {
-          await member.timeout(ms, reason);
-        } catch (err) {
-          console.error(err);
-          return interaction.reply({
-            content: "Failed to timeout this user. I may not have permission.",
-            ephemeral: true
-          });
-        }
-
-        const guildData = warnCounts[guildId];
-        const warnings = guildData.warnings;
-        if (!warnings[target.id]) warnings[target.id] = 0;
-        warnings[target.id]++;
-        saveWarns();
-
-        const currentWarnings = warnings[target.id];
-
-        // Note: auto-punish is not triggered again here to avoid double timeouts
-        return interaction.reply(
-          `⏳ **${target.username} has been timed out for ${durationStr}.**\nReason: ${reason}\nWarnings: **${currentWarnings}**`
-        );
-      }
-
-      // /moderator warnings
-      if (sub === 'warnings') {
-        const target = interaction.options.getUser('user');
-        const guildData = warnCounts[guildId];
-        const warnings = guildData.warnings;
-        const count = warnings[target.id] || 0;
-
-        return interaction.reply(
-          `📋 **${target.username}** has **${count}** warning${count === 1 ? '' : 's'}.`
-        );
-      }
-
-      // /moderator clearwarns
-      if (sub === 'clearwarns') {
-        const target = interaction.options.getUser('user');
-        const guildData = warnCounts[guildId];
-        const warnings = guildData.warnings;
-
-        const had = warnings[target.id] || 0;
-        delete warnings[target.id];
-        saveWarns();
-
-        return interaction.reply(
-          `🧹 Cleared **${had}** warning${had === 1 ? '' : 's'} for **${target.username}**.`
-        );
-      }
-
-      return;
+      return interaction.reply({
+        content: "Warn backup:",
+        files: [
+          {
+            attachment: Buffer.from(JSON.stringify(backup, null, 2)),
+            name: "warn-backup.json"
+          }
+        ],
+        ephemeral: true
+      });
     }
 
-    // -------------------------
-    // /moderator autopunish ...
-    // -------------------------
-    if (subGroup === 'autopunish') {
-      const guildData = warnCounts[guildId];
+    // === backupmessages ===
+    if (sub === "backupmessages") {
+      if (interaction.user.id !== "1262577043309072426") {
+        return interaction.reply({
+          content: "Not authorized.",
+          ephemeral: true
+        });
+      }
 
-      // /moderator autopunish add
-      if (sub === 'add') {
-        const warningsCount = interaction.options.getInteger('warnings');
-        const durationStr = interaction.options.getString('duration');
-        const reasonTemplate = interaction.options.getString('reason');
+      if (!historicalCounts) {
+        return interaction.reply({
+          content: "Historical data not found. Run a historical scan first.",
+          ephemeral: true
+        });
+      }
 
-        if (warningsCount <= 0) {
-          return interaction.reply({
-            content: "Warning count must be greater than 0.",
-            ephemeral: true
-          });
-        }
+      const backup = {
+        live: messageCounts[guildId] || {},
+        historical: historicalCounts[guildId] || {}
+      };
 
-        const ms = parsePeriod(durationStr);
+      return interaction.reply({
+        content: "Message backup:",
+        files: [
+          {
+            attachment: Buffer.from(JSON.stringify(backup, null, 2)),
+            name: "message-backup.json"
+          }
+        ],
+        ephemeral: true
+      });
+    }
+
+    // === warn ===
+    if (sub === "warn") {
+      const target = interaction.options.getUser("user");
+      const reason = interaction.options.getString("reason");
+      const member = interaction.guild.members.cache.get(target.id);
+
+      if (!member) {
+        return interaction.reply({
+          content: "User not found.",
+          ephemeral: true
+        });
+      }
+
+      const warnings = warnCounts[guildId].warnings;
+      warnings[target.id] = (warnings[target.id] || 0) + 1;
+      saveWarns();
+
+      const auto = await applyAutoPunish(
+        interaction,
+        member,
+        warnings[target.id]
+      );
+
+      return interaction.reply(
+        `Warned **${target.username}**.\nReason: ${reason}\nWarnings: **${warnings[target.id]}**` +
+          (auto ? `\n${auto}` : "")
+      );
+    }
+
+    // === timeout ===
+    if (sub === "timeout") {
+      const target = interaction.options.getUser("user");
+      const durationStr = interaction.options.getString("duration");
+      const reason = interaction.options.getString("reason");
+      const member = interaction.guild.members.cache.get(target.id);
+
+      if (!member) {
+        return interaction.reply({
+          content: "User not found.",
+          ephemeral: true
+        });
+      }
+
+      const ms = parsePeriod(durationStr);
+      if (!ms) {
+        return interaction.reply({
+          content: "Invalid duration.",
+          ephemeral: true
+        });
+      }
+
+      try {
+        await member.timeout(ms, reason);
+      } catch {
+        return interaction.reply({
+          content: "Failed to timeout user.",
+          ephemeral: true
+        });
+      }
+
+      const warnings = warnCounts[guildId].warnings;
+      warnings[target.id] = (warnings[target.id] || 0) + 1;
+      saveWarns();
+
+      return interaction.reply(
+        `Timed out **${target.username}** for **${durationStr}**.\nReason: ${reason}\nWarnings: **${warnings[target.id]}**`
+      );
+    }
+
+    // === warnings ===
+    if (sub === "warnings") {
+      const target = interaction.options.getUser("user");
+      const warnings = warnCounts[guildId].warnings[target.id] || 0;
+
+      return interaction.reply(
+        `**${target.username}** has **${warnings}** warning(s).`
+      );
+    }
+
+    // === clearwarns ===
+    if (sub === "clearwarns") {
+      const target = interaction.options.getUser("user");
+      const warnings = warnCounts[guildId].warnings[target.id] || 0;
+
+      delete warnCounts[guildId].warnings[target.id];
+      saveWarns();
+
+      return interaction.reply(
+        `Cleared **${warnings}** warning(s) for **${target.username}**.`
+      );
+    }
+
+    // === autopunish ===
+    if (subGroup === "autopunish") {
+      const rules = warnCounts[guildId].autopunish;
+
+      if (sub === "add") {
+        const count = interaction.options.getInteger("warnings");
+        const duration = interaction.options.getString("duration");
+        const reason = interaction.options.getString("reason");
+
+        const ms = parsePeriod(duration);
         if (!ms) {
           return interaction.reply({
-            content: "Invalid duration format. Use formats like `10m`, `1h`, `2d`.",
+            content: "Invalid duration.",
             ephemeral: true
           });
         }
 
-        // Replace existing rule with same warnings, if any
-        guildData.autopunish = guildData.autopunish.filter(r => r.warnings !== warningsCount);
+        warnCounts[guildId].autopunish = rules.filter(
+          r => r.warnings !== count
+        );
 
-        const rule = {
-          warnings: warningsCount,
-          duration: durationStr
-        };
+        const rule = { warnings: count, duration };
+        if (reason) rule.reason = reason;
 
-        if (reasonTemplate && reasonTemplate.trim().length > 0) {
-          rule.reason = reasonTemplate;
-        }
-
-        guildData.autopunish.push(rule);
-        // Sort rules by warnings ascending (for cleanliness)
-        guildData.autopunish.sort((a, b) => a.warnings - b.warnings);
+        warnCounts[guildId].autopunish.push(rule);
+        warnCounts[guildId].autopunish.sort(
+          (a, b) => a.warnings - b.warnings
+        );
         saveWarns();
 
         return interaction.reply(
-          `✅ Added auto-timeout rule: **${warningsCount} warnings** → timeout for **${durationStr}**` +
-          (rule.reason ? `\nReason template: \`${rule.reason}\`` : "")
+          `Added rule: **${count} warnings** → **${duration}**`
         );
       }
 
-      // /moderator autopunish remove
-      if (sub === 'remove') {
-        const warningsCount = interaction.options.getInteger('warnings');
+      if (sub === "remove") {
+        const count = interaction.options.getInteger("warnings");
+        const before = rules.length;
 
-        const beforeLength = guildData.autopunish.length;
-        guildData.autopunish = guildData.autopunish.filter(r => r.warnings !== warningsCount);
+        warnCounts[guildId].autopunish = rules.filter(
+          r => r.warnings !== count
+        );
         saveWarns();
 
-        if (guildData.autopunish.length === beforeLength) {
+        if (rules.length === before) {
           return interaction.reply(
-            `❌ No rule found for **${warningsCount} warnings**.`
+            `No rule found for **${count} warnings**.`
           );
         }
 
         return interaction.reply(
-          `🗑️ Removed auto-timeout rule for **${warningsCount} warnings**.`
+          `Removed rule for **${count} warnings**.`
         );
       }
 
-      // /moderator autopunish list
-      if (sub === 'list') {
-        if (!guildData.autopunish.length) {
-          return interaction.reply("There are currently no auto-timeout rules configured.");
+      if (sub === "list") {
+        if (!rules.length) {
+          return interaction.reply("No auto-timeout rules configured.");
         }
 
-        const lines = guildData.autopunish.map(r => {
-          let line = `• **${r.warnings} warnings** → timeout **${r.duration}**`;
-          if (r.reason) {
-            line += `\n   Reason template: \`${r.reason}\``;
-          }
+        const lines = rules.map(r => {
+          let line = `• **${r.warnings} warnings** → **${r.duration}**`;
+          if (r.reason) line += `\n  Reason: ${r.reason}`;
           return line;
         });
 
-        return interaction.reply(
-          `📜 **Auto-timeout rules:**\n` + lines.join('\n')
-        );
+        return interaction.reply(lines.join("\n"));
       }
 
-      // /moderator autopunish clear
-      if (sub === 'clear') {
-        const count = guildData.autopunish.length;
-        guildData.autopunish = [];
+      if (sub === "clear") {
+        const count = rules.length;
+        warnCounts[guildId].autopunish = [];
         saveWarns();
 
         return interaction.reply(
-          `🧹 Cleared **${count}** auto-timeout rule${count === 1 ? '' : 's'}.`
+          `Cleared **${count}** auto-timeout rule(s).`
         );
       }
     }
   }
 });
 
-// -------------------------
-// LOGIN
-// -------------------------
+// === SECTION: LOGIN ===
 client.login(process.env.TOKEN);
-
-
-
-
-
-
-
-
-
-
-
 
 
