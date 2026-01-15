@@ -397,7 +397,7 @@ client.on("interactionCreate", async interaction => {
 
     // === /moderator backupwarns ===
     if (sub === "backupwarns") {
-      if (interaction.user.id !== "1262577043309072426") {
+      if (interaction.user.id !== process.env.USER_ID) {
         return interaction.reply({
           content: "Not authorized.",
           ephemeral: true
@@ -429,7 +429,7 @@ client.on("interactionCreate", async interaction => {
 
     // === /moderator backupmessages ===
     if (sub === "backupmessages") {
-      if (interaction.user.id !== "1262577043309072426") {
+      if (interaction.user.id !== process.env.USER_ID) {
         return interaction.reply({
           content: "Not authorized.",
           ephemeral: true
@@ -460,7 +460,7 @@ client.on("interactionCreate", async interaction => {
 
     // === /moderator backuplogchannels ===
     if (sub === "backuplogchannels") {
-      if (interaction.user.id !== "1262577043309072426") {
+      if (interaction.user.id !== process.env.USER_ID) {
         return interaction.reply({
           content: "Not authorized.",
           ephemeral: true
@@ -744,3 +744,4 @@ client.on("interactionCreate", async interaction => {
 
 // === SECTION: LOGIN ===
 client.login(process.env.TOKEN);
+
