@@ -42,6 +42,15 @@ commands.push(
     .setDescription("Moderation tools")
 
     .addSubcommand(sub =>
+  sub
+    .setName("setlog")
+    .setDescription("Set the moderation log channel")
+    .addChannelOption(o =>
+      o.setName("channel").setDescription("Log channel").setRequired(true)
+    )
+)
+
+    .addSubcommand(sub =>
       sub
         .setName("warn")
         .setDescription("Warn a member")
@@ -165,6 +174,7 @@ for (const guildId of GUILDS) {
   }
 })();
 //repurpose
+
 
 
 
