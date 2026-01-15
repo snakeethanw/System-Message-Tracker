@@ -1,15 +1,14 @@
 {
   "name": "my-discord-bot",
   "version": "1.0.0",
-  "description": "Discord bot that counts messages and updates channel name",
+  "description": "Discord bot that counts messages, logs moderation actions, and updates channel names",
   "main": "index.js",
   "scripts": {
-    "start": "node index.js"
+    "start": "node index.js",
+    "deploy": "node deploy-commands.js"
   },
   "dependencies": {
     "discord.js": "^14.14.1",
     "dotenv": "^16.4.5"
   }
 }
-
-
