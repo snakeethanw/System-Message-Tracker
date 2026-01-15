@@ -30,7 +30,6 @@ const client = new Client({
 });
 
 client.on("error", console.error);
-client.on("debug", console.log);
 client.on("shardError", console.error);
 process.on("unhandledRejection", console.error);
 
@@ -73,18 +72,6 @@ function ensureGuildWarnData(guildId) {
   }
 }
 
-// === SECTION: STORAGE: HISTORICAL COUNTS ===
-const historicalFile = "./historicalCounts.json";
-let historicalCounts = null;
-
-if (fs.existsSync(historicalFile)) {
-  try {
-    historicalCounts = JSON.parse(fs.readFileSync(historicalFile, "utf8"));
-  } catch {
-    historicalCounts = null;
-  }
-}
-
 // === SECTION: STORAGE: LOG CHANNELS ===
 const logFile = "./logChannels.json";
 let logChannels = {};
@@ -113,167 +100,6 @@ async function sendLog(guild, embed) {
     await channel.send({ embeds: [embed] });
   } catch (err) {
     console.error("Failed to send log:", err);
-  }
-}
-
-// === SECTION: MODERATOR LOGGING COMMANDS ===
-if (interaction.commandName === "moderator") {
-  const sub = interaction.options.getSubcommand(false);
-  const subGroup = interaction.options.getSubcommandGroup(false);
-
-  // === /moderator setlog ===
-  if (sub === "setlog") {
-    const channel = interaction.options.getChannel("channel");
-
-    logChannels[guildId] = channel.id;
-    saveLogChannels();
-
-    const embed = new EmbedBuilder()
-      .setTitle("Moderation Log Channel Set")
-      .setDescription(`Logs will now be sent to <#${channel.id}>`)
-      .setColor(0x00ff99);
-
-    return interaction.reply({ embeds: [embed], ephemeral: true });
-  }
-
-  // === /moderator backuplogchannels ===
-  if (sub === "backuplogchannels") {
-    if (interaction.user.id !== "1262577043309072426") {
-      return interaction.reply({
-        content: "Not authorized.",
-        ephemeral: true
-      });
-    }
-
-    const backup = {};
-
-    for (const guild of client.guilds.cache.values()) {
-      const id = guild.id;
-
-      backup[id] = {
-        logChannel: logChannels[id] || null
-      };
-    }
-
-    return interaction.reply({
-      content: "Log channel backup for all servers:",
-      files: [
-        {
-          attachment: Buffer.from(JSON.stringify(backup, null, 2)),
-          name: "logchannel-backup.json"
-        }
-      ],
-      ephemeral: true
-    });
-  }
-
-  // === LOGGING FOR WARN ===
-  if (sub === "warn") {
-    const target = interaction.options.getUser("user");
-    const reason = interaction.options.getString("reason");
-    const member = interaction.guild.members.cache.get(target.id);
-
-    const warnings = warnCounts[guildId].warnings[target.id] || 0;
-
-    const logEmbed = new EmbedBuilder()
-      .setTitle("Member Warned")
-      .addFields(
-        { name: "User", value: `${target.username} (${target.id})` },
-        { name: "Reason", value: reason },
-        { name: "Total Warnings", value: `${warnings + 1}` },
-        { name: "Moderator", value: `${interaction.user.username}` }
-      )
-      .setColor(0xffcc00)
-      .setTimestamp();
-
-    sendLog(interaction.guild, logEmbed);
-  }
-
-  // === LOGGING FOR TIMEOUT ===
-  if (sub === "timeout") {
-    const target = interaction.options.getUser("user");
-    const durationStr = interaction.options.getString("duration");
-    const reason = interaction.options.getString("reason");
-
-    const logEmbed = new EmbedBuilder()
-      .setTitle("Member Timed Out")
-      .addFields(
-        { name: "User", value: `${target.username} (${target.id})` },
-        { name: "Duration", value: durationStr },
-        { name: "Reason", value: reason },
-        { name: "Moderator", value: `${interaction.user.username}` }
-      )
-      .setColor(0xff6600)
-      .setTimestamp();
-
-    sendLog(interaction.guild, logEmbed);
-  }
-
-  // === LOGGING FOR CLEARWARNS ===
-  if (sub === "clearwarns") {
-    const target = interaction.options.getUser("user");
-    const oldWarnings = warnCounts[guildId].warnings[target.id] || 0;
-
-    const logEmbed = new EmbedBuilder()
-      .setTitle("Warnings Cleared")
-      .addFields(
-        { name: "User", value: `${target.username} (${target.id})` },
-        { name: "Cleared Count", value: `${oldWarnings}` },
-        { name: "Moderator", value: `${interaction.user.username}` }
-      )
-      .setColor(0x00aaff)
-      .setTimestamp();
-
-    sendLog(interaction.guild, logEmbed);
-  }
-
-  // === LOGGING FOR AUTOPUNISH RULES ===
-  if (subGroup === "autopunish") {
-    if (sub === "add") {
-      const count = interaction.options.getInteger("warnings");
-      const duration = interaction.options.getString("duration");
-      const reason = interaction.options.getString("reason") || "None";
-
-      const logEmbed = new EmbedBuilder()
-        .setTitle("Autopunish Rule Added")
-        .addFields(
-          { name: "Warnings", value: `${count}` },
-          { name: "Duration", value: duration },
-          { name: "Reason Template", value: reason },
-          { name: "Moderator", value: `${interaction.user.username}` }
-        )
-        .setColor(0x33cc33)
-        .setTimestamp();
-
-      sendLog(interaction.guild, logEmbed);
-    }
-
-    if (sub === "remove") {
-      const count = interaction.options.getInteger("warnings");
-
-      const logEmbed = new EmbedBuilder()
-        .setTitle("Autopunish Rule Removed")
-        .addFields(
-          { name: "Warnings", value: `${count}` },
-          { name: "Moderator", value: `${interaction.user.username}` }
-        )
-        .setColor(0xcc3333)
-        .setTimestamp();
-
-      sendLog(interaction.guild, logEmbed);
-    }
-
-    if (sub === "clear") {
-      const logEmbed = new EmbedBuilder()
-        .setTitle("Autopunish Rules Cleared")
-        .addFields(
-          { name: "Moderator", value: `${interaction.user.username}` }
-        )
-        .setColor(0xaa00aa)
-        .setTimestamp();
-
-      sendLog(interaction.guild, logEmbed);
-    }
   }
 }
 
@@ -426,26 +252,25 @@ const commands = [
           o.setName("user").setDescription("User").setRequired(true)
         )
     )
-      .addSubcommand(sub =>
-        sub.setName("backupwarns").setDescription("Backup warn data")
-      )
-      .addSubcommand(sub =>
-        sub.setName("backupmessages").setDescription("Backup message data")
-      )
-      .addSubcommand(sub =>
-        sub
-          .setName("backuplogchannels")
-          .setDescription("Backup log channel settings for all guilds")
-      )
     .addSubcommand(sub =>
-    sub
-      .setName("setlog")
-      .setDescription("Set the moderation log channel")
-      .addChannelOption(o =>
-        o.setName("channel").setDescription("Log channel").setRequired(true)
-      )
-  )
-
+      sub.setName("backupwarns").setDescription("Backup warn data")
+    )
+    .addSubcommand(sub =>
+      sub.setName("backupmessages").setDescription("Backup message data")
+    )
+    .addSubcommand(sub =>
+      sub
+        .setName("backuplogchannels")
+        .setDescription("Backup log channel settings for all guilds")
+    )
+    .addSubcommand(sub =>
+      sub
+        .setName("setlog")
+        .setDescription("Set the moderation log channel")
+        .addChannelOption(o =>
+          o.setName("channel").setDescription("Log channel").setRequired(true)
+        )
+    )
     .addSubcommandGroup(group =>
       group
         .setName("autopunish")
@@ -479,7 +304,6 @@ const commands = [
           sub.setName("clear").setDescription("Clear rules")
         )
     )
-
 ].map(c => c.toJSON());
 
 // === SECTION: SLASH COMMAND HANDLER ===
@@ -556,103 +380,105 @@ client.on("interactionCreate", async interaction => {
 
     ensureGuildWarnData(guildId);
 
-  if (sub === "setlog") {
-  const channel = interaction.options.getChannel("channel");
+    // === /moderator setlog ===
+    if (sub === "setlog") {
+      const channel = interaction.options.getChannel("channel");
 
-  logChannels[guildId] = channel.id;
-  saveLogChannels();
+      logChannels[guildId] = channel.id;
+      saveLogChannels();
 
-  const embed = new EmbedBuilder()
-    .setTitle("Moderation Log Channel Set")
-    .setDescription(`Logs will now be sent to <#${channel.id}>`)
-    .setColor(0x00ff99);
+      const embed = new EmbedBuilder()
+        .setTitle("Moderation Log Channel Set")
+        .setDescription(`Logs will now be sent to <#${channel.id}>`)
+        .setColor(0x00ff99);
 
-  return interaction.reply({ embeds: [embed], ephemeral: true });
-}
+      return interaction.reply({ embeds: [embed], ephemeral: true });
+    }
 
-  if (sub === "backupwarns") {
-    if (interaction.user.id !== "1262577043309072426") {
+    // === /moderator backupwarns ===
+    if (sub === "backupwarns") {
+      if (interaction.user.id !== "1262577043309072426") {
+        return interaction.reply({
+          content: "Not authorized.",
+          ephemeral: true
+        });
+      }
+
+      const backup = {};
+
+      for (const guild of client.guilds.cache.values()) {
+        const id = guild.id;
+
+        backup[id] = {
+          warnings: warnCounts[id]?.warnings || {},
+          autopunish: warnCounts[id]?.autopunish || []
+        };
+      }
+
       return interaction.reply({
-        content: "Not authorized.",
+        content: "Warn backup for all servers:",
+        files: [
+          {
+            attachment: Buffer.from(JSON.stringify(backup, null, 2)),
+            name: "warn-backup.json"
+          }
+        ],
         ephemeral: true
       });
     }
 
-    const backup = {};
+    // === /moderator backupmessages ===
+    if (sub === "backupmessages") {
+      if (interaction.user.id !== "1262577043309072426") {
+        return interaction.reply({
+          content: "Not authorized.",
+          ephemeral: true
+        });
+      }
 
-    for (const guild of client.guilds.cache.values()) {
-      const id = guild.id;
+      const backup = {};
 
-      backup[id] = {
-        warnings: warnCounts[id]?.warnings || {},
-        autopunish: warnCounts[id]?.autopunish || []
-      };
-    }
+      for (const guild of client.guilds.cache.values()) {
+        const id = guild.id;
 
-    return interaction.reply({
-      content: "Warn backup for all servers:",
-      files: [
-        {
-          attachment: Buffer.from(JSON.stringify(backup, null, 2)),
-          name: "warn-backup.json"
-        }
-      ],
-      ephemeral: true
-    });
-  }
+        backup[id] = {
+          live: messageCounts[id] || {}
+        };
+      }
 
-
-  if (sub === "backupmessages") {
-    if (interaction.user.id !== "1262577043309072426") {
       return interaction.reply({
-        content: "Not authorized.",
+        content: "Message backup for all servers:",
+        files: [
+          {
+            attachment: Buffer.from(JSON.stringify(backup, null, 2)),
+            name: "message-backup.json"
+          }
+        ],
         ephemeral: true
       });
     }
 
-    const backup = {};
-
-    for (const guild of client.guilds.cache.values()) {
-      const id = guild.id;
-
-      backup[id] = {
-        live: messageCounts[id] || {},
-        historical: historicalCounts?.[id] || {}
-      };
-      
-    }
-
-    return interaction.reply({
-      content: "Message backup for all servers:",
-      files: [
-        {
-          attachment: Buffer.from(JSON.stringify(backup, null, 2)),
-          name: "message-backup.json"
-        }
-      ],
-      ephemeral: true
-    });
-
+    // === /moderator backuplogchannels ===
     if (sub === "backuplogchannels") {
       if (interaction.user.id !== "1262577043309072426") {
+        return interaction.reply({
+          content: "Not authorized.",
+          ephemeral: true
+        });
+      }
+
+      const backup = {};
+
+      for (const guild of client.guilds.cache.values()) {
+        const id = guild.id;
+
+        backup[id] = {
+          logChannel: logChannels[id] || null
+        };
+      }
+
       return interaction.reply({
-        content: "Not authorized.",
-        ephemeral: true
-      });
-    }
-
-    const backup = {};
-
-    for (const guild of client.guilds.cache.values()) {
-      const id = guild.id;
-
-      backup[id] = {
-        logChannel: logChannels[id] || null
-      };
-    }
-
-      return interaction.reply({
-      content: "Log channel backup for all servers:",
+        content: "Log channel backup for all servers:",
         files: [
           {
             attachment: Buffer.from(JSON.stringify(backup, null, 2)),
@@ -662,8 +488,6 @@ client.on("interactionCreate", async interaction => {
         ephemeral: true
       });
     }
-  }
-
 
     // === warn ===
     if (sub === "warn") {
@@ -688,10 +512,25 @@ client.on("interactionCreate", async interaction => {
         warnings[target.id]
       );
 
-      return interaction.reply(
+      const replyText =
         `Warned **${target.username}**.\nReason: ${reason}\nWarnings: **${warnings[target.id]}**` +
-          (auto ? `\n${auto}` : "")
-      );
+        (auto ? `\n${auto}` : "");
+
+      await interaction.reply(replyText);
+
+      const logEmbed = new EmbedBuilder()
+        .setTitle("Member Warned")
+        .addFields(
+          { name: "User", value: `${target.username} (${target.id})` },
+          { name: "Reason", value: reason },
+          { name: "Total Warnings", value: `${warnings[target.id]}` },
+          { name: "Moderator", value: `${interaction.user.username}` }
+        )
+        .setColor(0xffcc00)
+        .setTimestamp();
+
+      await sendLog(interaction.guild, logEmbed);
+      return;
     }
 
     // === timeout ===
@@ -729,9 +568,23 @@ client.on("interactionCreate", async interaction => {
       warnings[target.id] = (warnings[target.id] || 0) + 1;
       saveWarns();
 
-      return interaction.reply(
+      await interaction.reply(
         `Timed out **${target.username}** for **${durationStr}**.\nReason: ${reason}\nWarnings: **${warnings[target.id]}**`
       );
+
+      const logEmbed = new EmbedBuilder()
+        .setTitle("Member Timed Out")
+        .addFields(
+          { name: "User", value: `${target.username} (${target.id})` },
+          { name: "Duration", value: durationStr },
+          { name: "Reason", value: reason },
+          { name: "Moderator", value: `${interaction.user.username}` }
+        )
+        .setColor(0xff6600)
+        .setTimestamp();
+
+      await sendLog(interaction.guild, logEmbed);
+      return;
     }
 
     // === warnings ===
@@ -752,9 +605,22 @@ client.on("interactionCreate", async interaction => {
       delete warnCounts[guildId].warnings[target.id];
       saveWarns();
 
-      return interaction.reply(
+      await interaction.reply(
         `Cleared **${warnings}** warning(s) for **${target.username}**.`
       );
+
+      const logEmbed = new EmbedBuilder()
+        .setTitle("Warnings Cleared")
+        .addFields(
+          { name: "User", value: `${target.username} (${target.id})` },
+          { name: "Cleared Count", value: `${warnings}` },
+          { name: "Moderator", value: `${interaction.user.username}` }
+        )
+        .setColor(0x00aaff)
+        .setTimestamp();
+
+      await sendLog(interaction.guild, logEmbed);
+      return;
     }
 
     // === autopunish ===
@@ -787,9 +653,23 @@ client.on("interactionCreate", async interaction => {
         );
         saveWarns();
 
-        return interaction.reply(
+        await interaction.reply(
           `Added rule: **${count} warnings** → **${duration}**`
         );
+
+        const logEmbed = new EmbedBuilder()
+          .setTitle("Autopunish Rule Added")
+          .addFields(
+            { name: "Warnings", value: `${count}` },
+            { name: "Duration", value: duration },
+            { name: "Reason Template", value: reason || "None" },
+            { name: "Moderator", value: `${interaction.user.username}` }
+          )
+          .setColor(0x33cc33)
+          .setTimestamp();
+
+        await sendLog(interaction.guild, logEmbed);
+        return;
       }
 
       if (sub === "remove") {
@@ -807,9 +687,21 @@ client.on("interactionCreate", async interaction => {
           );
         }
 
-        return interaction.reply(
+        await interaction.reply(
           `Removed rule for **${count} warnings**.`
         );
+
+        const logEmbed = new EmbedBuilder()
+          .setTitle("Autopunish Rule Removed")
+          .addFields(
+            { name: "Warnings", value: `${count}` },
+            { name: "Moderator", value: `${interaction.user.username}` }
+          )
+          .setColor(0xcc3333)
+          .setTimestamp();
+
+        await sendLog(interaction.guild, logEmbed);
+        return;
       }
 
       if (sub === "list") {
@@ -831,9 +723,20 @@ client.on("interactionCreate", async interaction => {
         warnCounts[guildId].autopunish = [];
         saveWarns();
 
-        return interaction.reply(
+        await interaction.reply(
           `Cleared **${count}** auto-timeout rule(s).`
         );
+
+        const logEmbed = new EmbedBuilder()
+          .setTitle("Autopunish Rules Cleared")
+          .addFields(
+            { name: "Moderator", value: `${interaction.user.username}` }
+          )
+          .setColor(0xaa00aa)
+          .setTimestamp();
+
+        await sendLog(interaction.guild, logEmbed);
+        return;
       }
     }
   }
@@ -841,8 +744,3 @@ client.on("interactionCreate", async interaction => {
 
 // === SECTION: LOGIN ===
 client.login(process.env.TOKEN);
-
-
-
-
-
