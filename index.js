@@ -349,64 +349,69 @@ client.on("interactionCreate", async interaction => {
 
     ensureGuildWarnData(guildId);
 
-    // === backupwarns ===
-    if (sub === "backupwarns") {
-      if (interaction.user.id !== "1262577043309072426") {
-        return interaction.reply({
-          content: "Not authorized.",
-          ephemeral: true
-        });
-      }
-
-      const backup = {
-        warnings: warnCounts[guildId].warnings,
-        autopunish: warnCounts[guildId].autopunish
-      };
-
+  if (sub === "backupwarns") {
+    if (interaction.user.id !== "1262577043309072426") {
       return interaction.reply({
-        content: "Warn backup:",
-        files: [
-          {
-            attachment: Buffer.from(JSON.stringify(backup, null, 2)),
-            name: "warn-backup.json"
-          }
-        ],
+        content: "Not authorized.",
         ephemeral: true
       });
     }
 
-    // === backupmessages ===
-    if (sub === "backupmessages") {
-      if (interaction.user.id !== "1262577043309072426") {
-        return interaction.reply({
-          content: "Not authorized.",
-          ephemeral: true
-        });
-      }
+    const backup = {};
 
-      if (!historicalCounts) {
-        return interaction.reply({
-          content: "Historical data not found. Run a historical scan first.",
-          ephemeral: true
-        });
-      }
+    for (const guild of client.guilds.cache.values()) {
+      const id = guild.id;
 
-      const backup = {
-        live: messageCounts[guildId] || {},
-        historical: historicalCounts[guildId] || {}
+      backup[id] = {
+        warnings: warnCounts[id]?.warnings || {},
+        autopunish: warnCounts[id]?.autopunish || []
       };
+    }
 
+    return interaction.reply({
+      content: "Warn backup for all servers:",
+      files: [
+        {
+          attachment: Buffer.from(JSON.stringify(backup, null, 2)),
+          name: "warn-backup.json"
+        }
+      ],
+      ephemeral: true
+    });
+  }
+
+
+  if (sub === "backupmessages") {
+    if (interaction.user.id !== "1262577043309072426") {
       return interaction.reply({
-        content: "Message backup:",
-        files: [
-          {
-            attachment: Buffer.from(JSON.stringify(backup, null, 2)),
-            name: "message-backup.json"
-          }
-        ],
+        content: "Not authorized.",
         ephemeral: true
       });
     }
+
+    const backup = {};
+
+    for (const guild of client.guilds.cache.values()) {
+      const id = guild.id;
+
+      backup[id] = {
+        live: messageCounts[id] || {},
+        historical: historicalCounts?.[id] || {}
+      };
+    }
+
+    return interaction.reply({
+      content: "Message backup for all servers:",
+      files: [
+        {
+          attachment: Buffer.from(JSON.stringify(backup, null, 2)),
+          name: "message-backup.json"
+        }
+      ],
+      ephemeral: true
+    });
+  }
+
 
     // === warn ===
     if (sub === "warn") {
@@ -584,6 +589,7 @@ client.on("interactionCreate", async interaction => {
 
 // === SECTION: LOGIN ===
 client.login(process.env.TOKEN);
+
 
 
 
