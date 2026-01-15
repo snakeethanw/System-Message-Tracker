@@ -170,8 +170,8 @@ const rest = new REST({ version: "10" }).setToken(TOKEN);
     console.log("Deploying slash commands...");
 
     const GUILDS = [
-      "1434679299549564960",
-      "1323106269745381396"
+      process.env.GUILD_ID_1,
+      process.env.GUILD_ID_2
     ];
 
     for (const guildId of GUILDS) {
@@ -187,3 +187,4 @@ const rest = new REST({ version: "10" }).setToken(TOKEN);
     console.error(err);
   }
 })();
+
