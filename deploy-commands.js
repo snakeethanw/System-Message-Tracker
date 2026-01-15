@@ -41,15 +41,17 @@ commands.push(
     .setName("moderator")
     .setDescription("Moderation tools")
 
+    // === setlog ===
     .addSubcommand(sub =>
-  sub
-    .setName("setlog")
-    .setDescription("Set the moderation log channel")
-    .addChannelOption(o =>
-      o.setName("channel").setDescription("Log channel").setRequired(true)
+      sub
+        .setName("setlog")
+        .setDescription("Set the moderation log channel")
+        .addChannelOption(o =>
+          o.setName("channel").setDescription("Log channel").setRequired(true)
+        )
     )
-)
 
+    // === warn ===
     .addSubcommand(sub =>
       sub
         .setName("warn")
@@ -62,6 +64,7 @@ commands.push(
         )
     )
 
+    // === timeout ===
     .addSubcommand(sub =>
       sub
         .setName("timeout")
@@ -77,6 +80,7 @@ commands.push(
         )
     )
 
+    // === warnings ===
     .addSubcommand(sub =>
       sub
         .setName("warnings")
@@ -86,6 +90,7 @@ commands.push(
         )
     )
 
+    // === clearwarns ===
     .addSubcommand(sub =>
       sub
         .setName("clearwarns")
@@ -95,14 +100,24 @@ commands.push(
         )
     )
 
+    // === backupwarns ===
     .addSubcommand(sub =>
       sub.setName("backupwarns").setDescription("Backup warn data")
     )
 
+    // === backupmessages ===
     .addSubcommand(sub =>
       sub.setName("backupmessages").setDescription("Backup message data")
     )
 
+    // === backuplogchannels ===
+    .addSubcommand(sub =>
+      sub
+        .setName("backuplogchannels")
+        .setDescription("Backup log channel settings for all guilds")
+    )
+
+    // === autopunish group ===
     .addSubcommandGroup(group =>
       group
         .setName("autopunish")
@@ -154,28 +169,21 @@ const rest = new REST({ version: "10" }).setToken(TOKEN);
   try {
     console.log("Deploying slash commands...");
 
-const GUILDS = [
-  "1434679299549564960",
-  "1323106269745381396"
-];
+    const GUILDS = [
+      "1434679299549564960",
+      "1323106269745381396"
+    ];
 
-for (const guildId of GUILDS) {
-  await rest.put(
-    Routes.applicationGuildCommands(CLIENT_ID, guildId),
-    { body: commands }
-  );
-  console.log(`Commands deployed to guild ${guildId}`);
-}
+    for (const guildId of GUILDS) {
+      await rest.put(
+        Routes.applicationGuildCommands(CLIENT_ID, guildId),
+        { body: commands }
+      );
+      console.log(`Commands deployed to guild ${guildId}`);
+    }
 
-
-    console.log("Slash commands deployed globally.");
+    console.log("Slash commands deployed successfully.");
   } catch (err) {
     console.error(err);
   }
 })();
-//repurpose
-
-
-
-
-
