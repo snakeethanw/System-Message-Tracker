@@ -33,6 +33,14 @@ client.on("error", console.error);
 client.on("shardError", console.error);
 process.on("unhandledRejection", console.error);
 
+client.on('shardDisconnect', (event, shardID) => {
+  console.warn(`Shard ${shardID} disconnected:`, event);
+});
+
+client.on('reconnecting', () => {
+  console.log('Reconnecting to Discord...');
+});
+
 // === SECTION: STORAGE: MESSAGE COUNTS ===
 const messageFile = "./messageCounts.json";
 let messageCounts = {};
@@ -745,4 +753,5 @@ client.on("interactionCreate", async interaction => {
 // === SECTION: LOGIN ===
 client.login(process.env.TOKEN);
 //
+
 
