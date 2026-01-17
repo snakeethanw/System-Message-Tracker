@@ -14,7 +14,8 @@ const {
   GatewayIntentBits,
   ChannelType,
   EmbedBuilder,
-  SlashCommandBuilder
+  SlashCommandBuilder,
+  ActivityType
 } = require("discord.js");
 const fs = require("fs");
 
@@ -33,21 +34,35 @@ client.on("error", console.error);
 client.on("shardError", console.error);
 process.on("unhandledRejection", console.error);
 
-if (diff > 90000) {
-    console.log("⚠️ No heartbeats detected. Reconnecting in 5 seconds...");
-    client.destroy();
+// === SECTION: HEARTBEAT WATCHDOG & RECONNECT ===
+let lastHeartbeat = Date.now();
 
-    setTimeout(() => {
-        client.login(process.env.TOKEN);
-    }, 5000);
-}
-
-client.on('shardDisconnect', (event, shardID) => {
-  console.warn(`Shard ${shardID} disconnected:`, event);
+client.ws.on("heartbeat", () => {
+  lastHeartbeat = Date.now();
 });
 
-client.on('reconnecting', () => {
-  console.log('Reconnecting to Discord...');
+setInterval(() => {
+  const diff = Date.now() - lastHeartbeat;
+  if (diff > 90000) {
+    console.log("⚠️ No heartbeats detected. Reconnecting in 5 seconds...");
+    client.destroy();
+    setTimeout(() => {
+      client.login(process.env.TOKEN);
+    }, 5000);
+  }
+}, 30000);
+
+client.on("shardDisconnect", (event, shardID) => {
+  console.warn(`Shard ${shardID} disconnected:`, event);
+  console.log("Reconnecting in 5 seconds...");
+  client.destroy();
+  setTimeout(() => {
+    client.login(process.env.TOKEN);
+  }, 5000);
+});
+
+client.on("reconnecting", () => {
+  console.log("Reconnecting to Discord...");
 });
 
 // === SECTION: STORAGE: MESSAGE COUNTS ===
@@ -759,10 +774,45 @@ client.on("interactionCreate", async interaction => {
   }
 });
 
+// === SECTION: PRESENCE ROTATION ===
+const presenceStates = [
+  { type: ActivityType.Watching, text: "⚡ server activity" },
+  { type: ActivityType.Watching, text: "🟦 logs and warnings" },
+  { type: ActivityType.Listening, text: "💬 conversations" },
+  { type: ActivityType.Listening, text: "🎧 voice channels" },
+  { type: ActivityType.Playing, text: "🛡️ moderation tools" },
+  { type: ActivityType.Playing, text: "📊 message analytics" },
+  { type: ActivityType.Watching, text: "👀 over the community" },
+  { type: ActivityType.Watching, text: "📡 live server metrics" },
+  { type: ActivityType.Listening, text: "📝 user reports" },
+  { type: ActivityType.Playing, text: "🧩 with server data" },
+  { type: ActivityType.Watching, text: "🔌 connections and shards" },
+  { type: ActivityType.Listening, text: "🕒 activity over time" }
+];
+
+const statusCycle = ["online", "idle", "dnd"];
+let presenceIndex = 0;
+let statusIndex = 0;
+
+client.on("ready", () => {
+  console.log(`Ready as ${client.user.tag}`);
+
+  const updatePresence = () => {
+    const current = presenceStates[presenceIndex];
+    const status = statusCycle[statusIndex];
+
+    client.user.setPresence({
+      activities: [{ name: current.text, type: current.type }],
+      status
+    });
+
+    presenceIndex = (presenceIndex + 1) % presenceStates.length;
+    statusIndex = (statusIndex + 1) % statusCycle.length;
+  };
+
+  updatePresence();
+  setInterval(updatePresence, 45000);
+});
+
 // === SECTION: LOGIN ===
 client.login(process.env.TOKEN);
-//
-
-
-
-
