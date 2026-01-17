@@ -1,3 +1,4 @@
+process.env.DISCORD_GATEWAY = "wss://gateway.discord.gg/?v=10&encoding=json";
 // === SECTION: SERVER KEEP-ALIVE ===
 http
   .createServer((req, res) => {
@@ -822,4 +823,5 @@ client.on("debug", msg => {
     console.log("[DEBUG]", msg);
   }
 });
+
 
