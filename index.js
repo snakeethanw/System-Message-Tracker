@@ -29,6 +29,23 @@ const client = new Client({
   ]
 });
 
+let lastHeartbeat = Date.now();
+
+client.ws.on("heartbeat", () => {
+    lastHeartbeat = Date.now();
+});
+
+setInterval(() => {
+    const diff = Date.now() - lastHeartbeat;
+
+    // If no heartbeat for 90 seconds, force reconnect
+    if (diff > 90000) {
+        console.log("⚠️ No heartbeats detected. Reconnecting...");
+        client.destroy();
+        client.login(process.env.TOKEN);
+    }
+}, 30000);
+
 client.on("error", console.error);
 client.on("shardError", console.error);
 process.on("unhandledRejection", console.error);
@@ -753,5 +770,6 @@ client.on("interactionCreate", async interaction => {
 // === SECTION: LOGIN ===
 client.login(process.env.TOKEN);
 //
+
 
 
