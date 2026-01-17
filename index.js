@@ -23,8 +23,8 @@ const fs = require("fs");
 // === SECTION: CLIENT INITIALIZATION ===
 const client = new Client({
   shards: 1,
-  ws: { compress: false }
-  rest: { timeout: 30000 }
+  ws: { compress: false },
+  rest: { timeout: 30000 },
   intents: [
     GatewayIntentBits.Guilds,
     GatewayIntentBits.GuildMessages,
@@ -826,6 +826,7 @@ client.on("debug", msg => {
     console.log("[DEBUG]", msg);
   }
 });
+
 
 
 
