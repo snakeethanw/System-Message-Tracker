@@ -24,6 +24,7 @@ const fs = require("fs");
 const client = new Client({
   shards: 1,
   ws: { compress: false }
+  rest: { timeout: 30000 }
   intents: [
     GatewayIntentBits.Guilds,
     GatewayIntentBits.GuildMessages,
@@ -825,6 +826,7 @@ client.on("debug", msg => {
     console.log("[DEBUG]", msg);
   }
 });
+
 
 
 
