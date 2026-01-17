@@ -1,11 +1,11 @@
 // === SECTION: SERVER KEEP-ALIVE ===
-const http = require("http");
 http
   .createServer((req, res) => {
     res.writeHead(200, { "Content-Type": "text/plain" });
     res.end("OK");
   })
-  .listen(process.env.PORT || 3000);
+  .listen(process.env.PORT || 3000, "0.0.0.0");
+
 
 // === SECTION: IMPORTS ===
 require("dotenv").config();
@@ -816,3 +816,4 @@ client.on("ready", () => {
 
 // === SECTION: LOGIN ===
 client.login(process.env.TOKEN);
+
