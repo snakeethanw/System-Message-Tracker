@@ -817,3 +817,9 @@ client.on("ready", () => {
 // === SECTION: LOGIN ===
 client.login(process.env.TOKEN);
 
+client.on("debug", msg => {
+  if (msg.includes("Connecting") || msg.includes("IDENTIFY") || msg.includes("READY")) {
+    console.log("[DEBUG]", msg);
+  }
+});
+
