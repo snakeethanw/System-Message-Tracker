@@ -29,26 +29,18 @@ const client = new Client({
   ]
 });
 
-let lastHeartbeat = Date.now();
-
-client.ws.on("heartbeat", () => {
-    lastHeartbeat = Date.now();
-});
-
-setInterval(() => {
-    const diff = Date.now() - lastHeartbeat;
-
-    // If no heartbeat for 90 seconds, force reconnect
-    if (diff > 90000) {
-        console.log("⚠️ No heartbeats detected. Reconnecting...");
-        client.destroy();
-        client.login(process.env.TOKEN);
-    }
-}, 30000);
-
 client.on("error", console.error);
 client.on("shardError", console.error);
 process.on("unhandledRejection", console.error);
+
+if (diff > 90000) {
+    console.log("⚠️ No heartbeats detected. Reconnecting in 5 seconds...");
+    client.destroy();
+
+    setTimeout(() => {
+        client.login(process.env.TOKEN);
+    }, 5000);
+}
 
 client.on('shardDisconnect', (event, shardID) => {
   console.warn(`Shard ${shardID} disconnected:`, event);
@@ -770,6 +762,7 @@ client.on("interactionCreate", async interaction => {
 // === SECTION: LOGIN ===
 client.login(process.env.TOKEN);
 //
+
 
 
 
