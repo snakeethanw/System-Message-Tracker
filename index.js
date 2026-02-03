@@ -1,13 +1,3 @@
-const http = require("http");
-// === SECTION: SERVER KEEP-ALIVE ===
-http
-  .createServer((req, res) => {
-    res.writeHead(200, { "Content-Type": "text/plain" });
-    res.end("OK");
-  })
-  .listen(process.env.PORT || 3000, "0.0.0.0");
-
-
 // === SECTION: IMPORTS ===
 require("dotenv").config();
 const {
@@ -22,7 +12,6 @@ const fs = require("fs");
 
 // === SECTION: CLIENT INITIALIZATION ===
 const client = new Client({
-  ws: { compress: false },
   rest: { timeout: 30000 },
   intents: [
     GatewayIntentBits.Guilds,
@@ -37,18 +26,7 @@ client.on("error", console.error);
 client.on("shardError", console.error);
 process.on("unhandledRejection", console.error);
 
-// === SECTION: HEARTBEAT WATCHDOG & RECONNECT ===
-let lastHeartbeat = Date.now();
-
-client.on("shardDisconnect", (event, shardID) => {
-  console.warn(`Shard ${shardID} disconnected:`, event);
-  console.log("Reconnecting in 5 seconds...");
-  client.destroy();
-  setTimeout(() => {
-    client.login(process.env.TOKEN);
-  }, 5000);
-});
-
+// === SECTION: RECONNECT ===
 client.on("reconnecting", () => {
   console.log("Reconnecting to Discord...");
 });
@@ -810,6 +788,7 @@ client.on("debug", msg => {
     console.log("[DEBUG]", msg);
   }
 });
+
 
 
 
