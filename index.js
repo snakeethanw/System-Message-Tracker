@@ -764,6 +764,10 @@ let statusIndex = 0;
 client.on("ready", () => {
   console.log(`Ready as ${client.user.tag}`);
 
+  for (const guild of client.guilds.cache.values()) { 
+    await scanGuildHistory(guild);
+  }
+  
   const updatePresence = () => {
     const current = presenceStates[presenceIndex];
     const status = statusCycle[statusIndex];
@@ -789,6 +793,7 @@ client.on("debug", msg => {
     console.log("[DEBUG]", msg);
   }
 });
+
 
 
 
