@@ -40,21 +40,6 @@ process.on("unhandledRejection", console.error);
 // === SECTION: HEARTBEAT WATCHDOG & RECONNECT ===
 let lastHeartbeat = Date.now();
 
-client.ws.on("heartbeat", () => {
-  lastHeartbeat = Date.now();
-});
-
-setInterval(() => {
-  const diff = Date.now() - lastHeartbeat;
-  if (diff > 90000) {
-    console.log("⚠️ No heartbeats detected. Reconnecting in 5 seconds...");
-    client.destroy();
-    setTimeout(() => {
-      client.login(process.env.TOKEN);
-    }, 5000);
-  }
-}, 30000);
-
 client.on("shardDisconnect", (event, shardID) => {
   console.warn(`Shard ${shardID} disconnected:`, event);
   console.log("Reconnecting in 5 seconds...");
@@ -825,6 +810,7 @@ client.on("debug", msg => {
     console.log("[DEBUG]", msg);
   }
 });
+
 
 
 
