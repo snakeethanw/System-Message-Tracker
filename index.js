@@ -814,7 +814,7 @@ const statusCycle = ["online", "idle", "dnd"];
 let presenceIndex = 0;
 let statusIndex = 0;
 
-client.on("ready", () => {
+client.on("ready", async () => {
   console.log(`Ready as ${client.user.tag}`);
 
   for (const guild of client.guilds.cache.values()) { 
@@ -846,6 +846,7 @@ client.on("debug", msg => {
     console.log("[DEBUG]", msg);
   }
 });
+
 
 
 
