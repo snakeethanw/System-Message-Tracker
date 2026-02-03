@@ -120,6 +120,60 @@ function parsePeriod(str) {
   return num * map[unit];
 }
 
+async function scanGuildHistory(guild) {
+  const guildId = guild.id;
+
+  if (!messageCounts[guildId]) {
+    messageCounts[guildId] = { count: 0, scanned: false };
+  }
+
+  if (messageCounts[guildId].scanned) {
+    console.log(`Historical scan skipped for ${guild.name} (already scanned).`);
+    return;
+  }
+
+  console.log(`Starting historical scan for ${guild.name}...`);
+
+  let total = 0;
+
+  for (const channel of guild.channels.cache.values()) {
+    if (channel.type !== ChannelType.GuildText) continue;
+
+    console.log(`Scanning #${channel.name}...`);
+
+    let lastId = null;
+
+    while (true) {
+      const options = { limit: 100 };
+      if (lastId) options.before = lastId;
+
+      let messages;
+      try {
+        messages = await channel.messages.fetch(options);
+      } catch {
+        break; // no perms or channel inaccessible
+      }
+
+      if (messages.size === 0) break;
+
+      total += messages.size;
+      lastId = messages.last().id;
+
+      // Stop if we reached the end
+      if (messages.size < 100) break;
+
+      // Rate limit safety
+      await new Promise(res => setTimeout(res, 350));
+    }
+  }
+
+  messageCounts[guildId].count += total;
+  messageCounts[guildId].scanned = true;
+  saveMessageCounts();
+
+  console.log(`Historical scan complete for ${guild.name}. Added ${total} messages.`);
+}
+
 async function applyAutoPunish(interaction, member, currentWarnings) {
   const guildId = interaction.guild.id;
   ensureGuildWarnData(guildId);
@@ -793,6 +847,7 @@ client.on("debug", msg => {
     console.log("[DEBUG]", msg);
   }
 });
+
 
 
 
