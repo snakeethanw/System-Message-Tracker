@@ -1,4 +1,3 @@
-//re
 // === SECTION: IMPORTS ===
 require("dotenv").config();
 const {
@@ -847,6 +846,7 @@ client.on("debug", msg => {
     console.log("[DEBUG]", msg);
   }
 });
+
 
 
 
