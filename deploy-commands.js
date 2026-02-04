@@ -3,10 +3,11 @@ const { REST, Routes, SlashCommandBuilder } = require("discord.js");
 require("dotenv").config();
 
 // === SECTION: COMMAND ARRAY ===
-const commands = [];
+const guildCommands = [];
+const globalCommands = [];
 
-// === SECTION: /messages COMMAND ===
-commands.push(
+// === SECTION: /messages COMMAND (GUILD) ===
+guildCommands.push(
   new SlashCommandBuilder()
     .setName("messages")
     .setDescription("Message analysis tools")
@@ -35,8 +36,8 @@ commands.push(
     .toJSON()
 );
 
-// === SECTION: /moderator COMMAND ===
-commands.push(
+// === SECTION: /moderator COMMAND (GUILD) ===
+guildCommands.push(
   new SlashCommandBuilder()
     .setName("moderator")
     .setDescription("Moderation tools")
@@ -58,22 +59,6 @@ commands.push(
         .setDescription("Warn a member")
         .addUserOption(o =>
           o.setName("user").setDescription("User").setRequired(true)
-        )
-        .addStringOption(o =>
-          o.setName("reason").setDescription("Reason").setRequired(true)
-        )
-    )
-
-    // === timeout ===
-    .addSubcommand(sub =>
-      sub
-        .setName("timeout")
-        .setDescription("Timeout a member")
-        .addUserOption(o =>
-          o.setName("user").setDescription("User").setRequired(true)
-        )
-        .addStringOption(o =>
-          o.setName("duration").setDescription("10m, 1h, 2d").setRequired(true)
         )
         .addStringOption(o =>
           o.setName("reason").setDescription("Reason").setRequired(true)
@@ -117,11 +102,11 @@ commands.push(
         .setDescription("Backup log channel settings for all guilds")
     )
 
-    // === autopunish group ===
+    // === autopunish group (auto-mute rules) ===
     .addSubcommandGroup(group =>
       group
         .setName("autopunish")
-        .setDescription("Auto-timeout rules")
+        .setDescription("Auto-mute rules")
 
         .addSubcommand(sub =>
           sub
@@ -156,51 +141,69 @@ commands.push(
         )
     )
 
-      // === MUTE ===
-  .addSubcommand(sub =>
-    sub
-      .setName("mute")
-      .setDescription("Mute a member with optional duration")
-      .addUserOption(o =>
-        o.setName("user").setDescription("User to mute").setRequired(true)
-      )
-      .addStringOption(o =>
-        o
-          .setName("duration")
-          .setDescription("Duration (10m, 1h, 1d)")
-          .setRequired(false)
-      )
-      .addStringOption(o =>
-        o
-          .setName("reason")
-          .setDescription("Reason for mute")
-          .setRequired(false)
-      )
-  )
+    // === mute ===
+    .addSubcommand(sub =>
+      sub
+        .setName("mute")
+        .setDescription("Mute a member with optional duration")
+        .addUserOption(o =>
+          o.setName("user").setDescription("User to mute").setRequired(true)
+        )
+        .addStringOption(o =>
+          o
+            .setName("duration")
+            .setDescription("Duration (10m, 1h, 1d)")
+            .setRequired(false)
+        )
+        .addStringOption(o =>
+          o
+            .setName("reason")
+            .setDescription("Reason for mute")
+            .setRequired(true)
+        )
+    )
 
-  // === UNMUTE ===
-  .addSubcommand(sub =>
-    sub
-      .setName("unmute")
-      .setDescription("Unmute a member")
-      .addUserOption(o =>
-        o.setName("user").setDescription("User to unmute").setRequired(true)
-      )
-      .addStringOption(o =>
-        o
-          .setName("reason")
-          .setDescription("Reason for unmute")
-          .setRequired(false)
-      )
-  )
+    // === unmute ===
+    .addSubcommand(sub =>
+      sub
+        .setName("unmute")
+        .setDescription("Unmute a member")
+        .addUserOption(o =>
+          o.setName("user").setDescription("User to unmute").setRequired(true)
+        )
+        .addStringOption(o =>
+          o
+            .setName("reason")
+            .setDescription("Reason for unmute")
+            .setRequired(false)
+        )
+    )
 
-  // === SETUP MUTE ===
-  .addSubcommand(sub =>
-    sub
-      .setName("setupmute")
-      .setDescription("Configure which channels muted users can use")
-  )
+    // === setupmute ===
+    .addSubcommand(sub =>
+      sub
+        .setName("setupmute")
+        .setDescription("Configure which channels muted users can use")
+    )
 
+    .toJSON()
+);
+
+// === SECTION: /backup COMMAND (GLOBAL) ===
+globalCommands.push(
+  new SlashCommandBuilder()
+    .setName("backup")
+    .setDescription("Backup tools")
+    .addSubcommand(sub =>
+      sub
+        .setName("muteconfig")
+        .setDescription("Backup mute configuration for all servers")
+    )
+    .addSubcommand(sub =>
+      sub
+        .setName("master")
+        .setDescription("Master backup of all JSON data (requires passcode)")
+    )
     .toJSON()
 );
 
@@ -214,25 +217,27 @@ const rest = new REST({ version: "10" }).setToken(TOKEN);
   try {
     console.log("Deploying slash commands...");
 
-    const GUILDS = [
-      process.env.GUILD_ID_1,
-      process.env.GUILD_ID_2
-    ];
+    const GUILDS = [process.env.GUILD_ID_1, process.env.GUILD_ID_2].filter(
+      Boolean
+    );
 
+    // Deploy guild commands
     for (const guildId of GUILDS) {
       await rest.put(
         Routes.applicationGuildCommands(CLIENT_ID, guildId),
-        { body: commands }
+        { body: guildCommands }
       );
-      console.log(`Commands deployed to guild ${guildId}`);
+      console.log(`Guild commands deployed to guild ${guildId}`);
     }
+
+    // Deploy global commands
+    await rest.put(Routes.applicationCommands(CLIENT_ID), {
+      body: globalCommands
+    });
+    console.log("Global commands deployed.");
 
     console.log("Slash commands deployed successfully.");
   } catch (err) {
     console.error(err);
   }
 })();
-//
-
-
-
