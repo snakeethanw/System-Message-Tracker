@@ -101,6 +101,22 @@ async function sendLog(guild, embed) {
   }
 }
 
+// === SECTION: STORAGE: MUTE CONFIG ===
+const muteConfigFile = "./muteConfig.json";
+let muteConfig = {};
+
+if (fs.existsSync(muteConfigFile)) {
+  try {
+    muteConfig = JSON.parse(fs.readFileSync(muteConfigFile, "utf8"));
+  } catch {
+    muteConfig = {};
+  }
+}
+
+function saveMuteConfig() {
+  fs.writeFileSync(muteConfigFile, JSON.stringify(muteConfig, null, 2));
+}
+
 // === SECTION: HELPERS ===
 function parsePeriod(str) {
   const match = str.match(/^(\d+)(s|m|h|d)$/);
@@ -846,6 +862,7 @@ client.on("debug", msg => {
     console.log("[DEBUG]", msg);
   }
 });
+
 
 
 
