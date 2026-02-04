@@ -1,3 +1,6 @@
+await rest.put(Routes.applicationCommands(CLIENT_ID), { body: [] });
+console.log("Cleared ALL global commands.");
+
 // === SECTION: IMPORTS ===
 const { REST, Routes, SlashCommandBuilder } = require("discord.js");
 require("dotenv").config();
@@ -241,4 +244,5 @@ const rest = new REST({ version: "10" }).setToken(TOKEN);
     console.error(err);
   }
 })();
+
 
