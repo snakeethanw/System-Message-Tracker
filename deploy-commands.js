@@ -156,6 +156,51 @@ commands.push(
         )
     )
 
+      // === MUTE ===
+  .addSubcommand(sub =>
+    sub
+      .setName("mute")
+      .setDescription("Mute a member with optional duration")
+      .addUserOption(o =>
+        o.setName("user").setDescription("User to mute").setRequired(true)
+      )
+      .addStringOption(o =>
+        o
+          .setName("duration")
+          .setDescription("Duration (10m, 1h, 1d)")
+          .setRequired(false)
+      )
+      .addStringOption(o =>
+        o
+          .setName("reason")
+          .setDescription("Reason for mute")
+          .setRequired(false)
+      )
+  )
+
+  // === UNMUTE ===
+  .addSubcommand(sub =>
+    sub
+      .setName("unmute")
+      .setDescription("Unmute a member")
+      .addUserOption(o =>
+        o.setName("user").setDescription("User to unmute").setRequired(true)
+      )
+      .addStringOption(o =>
+        o
+          .setName("reason")
+          .setDescription("Reason for unmute")
+          .setRequired(false)
+      )
+  )
+
+  // === SETUP MUTE ===
+  .addSubcommand(sub =>
+    sub
+      .setName("setupmute")
+      .setDescription("Configure which channels muted users can use")
+  )
+
     .toJSON()
 );
 
@@ -188,5 +233,6 @@ const rest = new REST({ version: "10" }).setToken(TOKEN);
   }
 })();
 //
+
 
 
