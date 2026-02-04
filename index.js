@@ -8,7 +8,12 @@ const {
   SlashCommandBuilder,
   ActivityType,
   ActionRowBuilder,
-  ChannelSelectMenuBuilder
+  ChannelSelectMenuBuilder,
+  ButtonBuilder,
+  ButtonStyle,
+  ModalBuilder,
+  TextInputBuilder,
+  TextInputStyle
 } = require("discord.js");
 const fs = require("fs");
 
@@ -20,8 +25,10 @@ const client = new Client({
     GatewayIntentBits.GuildMessages,
     GatewayIntentBits.MessageContent,
     GatewayIntentBits.GuildVoiceStates,
-    GatewayIntentBits.GuildPresences
-  ]
+    GatewayIntentBits.GuildPresences,
+    GatewayIntentBits.DirectMessages
+  ],
+  partials: ["CHANNEL"]
 });
 
 client.on("error", console.error);
@@ -146,7 +153,7 @@ async function logMuteAction(guild, data) {
 
 // === SECTION: HELPERS ===
 function parsePeriod(str) {
-  const match = str.match(/^(\d+)(s|m|h|d)$/);
+  const match = str?.match(/^(\d+)(s|m|h|d)$/);
   if (!match) return null;
 
   const num = parseInt(match[1]);
@@ -224,7 +231,7 @@ async function scanGuildHistory(guild) {
       try {
         messages = await channel.messages.fetch(options);
       } catch {
-        break; // no perms or channel inaccessible
+        break;
       }
 
       if (messages.size === 0) break;
@@ -326,7 +333,7 @@ client.on("messageCreate", async message => {
   }
 });
 
-// === SECTION: SLASH COMMAND DEFINITIONS ===
+// === SECTION: SLASH COMMAND DEFINITIONS (for reference) ===
 const commands = [
   new SlashCommandBuilder()
     .setName("messages")
@@ -474,6 +481,20 @@ const commands = [
       sub
         .setName("setupmute")
         .setDescription("Configure which channels muted users can use")
+    ),
+
+  new SlashCommandBuilder()
+    .setName("backup")
+    .setDescription("Backup tools")
+    .addSubcommand(sub =>
+      sub
+        .setName("muteconfig")
+        .setDescription("Backup mute configuration for all servers")
+    )
+    .addSubcommand(sub =>
+      sub
+        .setName("master")
+        .setDescription("Master backup of all JSON data (requires passcode)")
     )
 ].map(c => c.toJSON());
 
@@ -481,10 +502,19 @@ const commands = [
 client.on("interactionCreate", async interaction => {
   if (!interaction.isChatInputCommand()) return;
 
-  const guildId = interaction.guild.id;
+  const userId = interaction.user.id;
+  const guild = interaction.guild;
+  const guildId = guild?.id;
 
   // === /messages ===
   if (interaction.commandName === "messages") {
+    if (!guild) {
+      return interaction.reply({
+        content: "This command can only be used in a server.",
+        ephemeral: true
+      });
+    }
+
     const sub = interaction.options.getSubcommand();
     const channel = interaction.options.getChannel("channel");
     const periodStr = interaction.options.getString("period");
@@ -547,6 +577,13 @@ client.on("interactionCreate", async interaction => {
 
   // === /moderator ===
   if (interaction.commandName === "moderator") {
+    if (!guild) {
+      return interaction.reply({
+        content: "This command can only be used in a server.",
+        ephemeral: true
+      });
+    }
+
     const sub = interaction.options.getSubcommand(false);
     const subGroup = interaction.options.getSubcommandGroup(false);
 
@@ -569,7 +606,7 @@ client.on("interactionCreate", async interaction => {
 
     // === /moderator backupwarns ===
     if (sub === "backupwarns") {
-      if (interaction.user.id !== process.env.USER_ID) {
+      if (userId !== process.env.USER_ID) {
         return interaction.reply({
           content: "Not authorized.",
           ephemeral: true
@@ -578,8 +615,8 @@ client.on("interactionCreate", async interaction => {
 
       const backup = {};
 
-      for (const guild of client.guilds.cache.values()) {
-        const id = guild.id;
+      for (const g of client.guilds.cache.values()) {
+        const id = g.id;
 
         backup[id] = {
           warnings: warnCounts[id]?.warnings || {},
@@ -601,7 +638,7 @@ client.on("interactionCreate", async interaction => {
 
     // === /moderator backupmessages ===
     if (sub === "backupmessages") {
-      if (interaction.user.id !== process.env.USER_ID) {
+      if (userId !== process.env.USER_ID) {
         return interaction.reply({
           content: "Not authorized.",
           ephemeral: true
@@ -610,8 +647,8 @@ client.on("interactionCreate", async interaction => {
 
       const backup = {};
 
-      for (const guild of client.guilds.cache.values()) {
-        const id = guild.id;
+      for (const g of client.guilds.cache.values()) {
+        const id = g.id;
 
         backup[id] = {
           live: messageCounts[id] || {}
@@ -632,7 +669,7 @@ client.on("interactionCreate", async interaction => {
 
     // === /moderator backuplogchannels ===
     if (sub === "backuplogchannels") {
-      if (interaction.user.id !== process.env.USER_ID) {
+      if (userId !== process.env.USER_ID) {
         return interaction.reply({
           content: "Not authorized.",
           ephemeral: true
@@ -641,8 +678,8 @@ client.on("interactionCreate", async interaction => {
 
       const backup = {};
 
-      for (const guild of client.guilds.cache.values()) {
-        const id = guild.id;
+      for (const g of client.guilds.cache.values()) {
+        const id = g.id;
 
         backup[id] = {
           logChannel: logChannels[id] || null
@@ -862,7 +899,7 @@ client.on("interactionCreate", async interaction => {
     if (sub === "mute") {
       const user = interaction.options.getUser("user");
       const durationStr = interaction.options.getString("duration");
-      const reason = interaction.options.getString("reason"); // required
+      const reason = interaction.options.getString("reason");
 
       const member = interaction.guild.members.cache.get(user.id);
       if (!member) {
@@ -1010,66 +1047,260 @@ client.on("interactionCreate", async interaction => {
       });
     }
   }
+
+  // === /backup (GLOBAL) ===
+  if (interaction.commandName === "backup") {
+    if (interaction.user.id !== process.env.USER_ID) {
+      return interaction.reply({
+        content: "Not authorized.",
+        ephemeral: true
+      });
+    }
+
+    const sub = interaction.options.getSubcommand();
+
+    // /backup muteconfig
+    if (sub === "muteconfig") {
+      const backup = {};
+
+      for (const g of client.guilds.cache.values()) {
+        const id = g.id;
+        backup[id] = muteConfig[id] || { appeal: [], tickets: [] };
+      }
+
+      return interaction.reply({
+        content: "Mute configuration backup for all servers:",
+        files: [
+          {
+            attachment: Buffer.from(JSON.stringify(backup, null, 2)),
+            name: "muteconfig-backup.json"
+          }
+        ],
+        ephemeral: true
+      });
+    }
+
+    // /backup master (modal-based)
+    if (sub === "master") {
+      const modal = new ModalBuilder()
+        .setCustomId("master_backup_modal")
+        .setTitle("Enter Backup Passcode")
+        .addComponents(
+          new ActionRowBuilder().addComponents(
+            new TextInputBuilder()
+              .setCustomId("backup_passcode")
+              .setLabel("Passcode")
+              .setStyle(TextInputStyle.Short)
+              .setRequired(true)
+          )
+        );
+
+      return interaction.showModal(modal);
+    }
+  }
 });
 
-// === SECTION: COMPONENT HANDLER (MUTE SETUP) ===
+// === SECTION: COMPONENT HANDLER (MUTE SETUP + BACKUP BUTTONS/MODALS) ===
 client.on("interactionCreate", async interaction => {
-  if (!interaction.isChannelSelectMenu()) return;
+  // Channel select menus for mute setup
+  if (interaction.isChannelSelectMenu()) {
+    const guild = interaction.guild;
+    if (!guild) return;
+    const guildId = guild.id;
 
-  const guild = interaction.guild;
-  if (!guild) return;
-  const guildId = guild.id;
+    const mutedRole = await ensureMutedRole(guild);
 
-  const mutedRole = await ensureMutedRole(guild);
-
-  if (!muteConfig[guildId]) {
-    muteConfig[guildId] = { appeal: [], tickets: [] };
-  }
-
-  if (interaction.customId === "mute_appeal_channels") {
-    muteConfig[guildId].appeal = interaction.values;
-    saveMuteConfig();
-
-    for (const id of interaction.values) {
-      const ch = guild.channels.cache.get(id);
-      if (!ch) continue;
-
-      await ch.permissionOverwrites
-        .edit(mutedRole, {
-          SendMessages: true,
-          UseApplicationCommands: true
-        })
-        .catch(() => {});
+    if (!muteConfig[guildId]) {
+      muteConfig[guildId] = { appeal: [], tickets: [] };
     }
 
-    return interaction.reply({
-      content: "Appeal channels updated for muted users.",
-      ephemeral: true
-    });
-  }
+    if (interaction.customId === "mute_appeal_channels") {
+      muteConfig[guildId].appeal = interaction.values;
+      saveMuteConfig();
 
-  if (interaction.customId === "mute_ticket_channels") {
-    muteConfig[guildId].tickets = interaction.values;
-    saveMuteConfig();
+      for (const id of interaction.values) {
+        const ch = guild.channels.cache.get(id);
+        if (!ch) continue;
 
-    for (const id of interaction.values) {
-      const ch = guild.channels.cache.get(id);
-      if (!ch) continue;
+        await ch.permissionOverwrites
+          .edit(mutedRole, {
+            SendMessages: true,
+            UseApplicationCommands: true
+          })
+          .catch(() => {});
+      }
 
-      await ch.permissionOverwrites
-        .edit(mutedRole, {
-          SendMessages: true,
-          UseApplicationCommands: true
-        })
-        .catch(() => {});
+      return interaction.reply({
+        content: "Appeal channels updated for muted users.",
+        ephemeral: true
+      });
     }
 
-    return interaction.reply({
-      content: "Ticket channels updated for muted users.",
-      ephemeral: true
-    });
+    if (interaction.customId === "mute_ticket_channels") {
+      muteConfig[guildId].tickets = interaction.values;
+      saveMuteConfig();
+
+      for (const id of interaction.values) {
+        const ch = guild.channels.cache.get(id);
+        if (!ch) continue;
+
+        await ch.permissionOverwrites
+          .edit(mutedRole, {
+            SendMessages: true,
+            UseApplicationCommands: true
+          })
+          .catch(() => {});
+      }
+
+      return interaction.reply({
+        content: "Ticket channels updated for muted users.",
+        ephemeral: true
+      });
+    }
+  }
+
+  // Buttons (scheduled backup unlock)
+  if (interaction.isButton()) {
+    if (interaction.customId === "scheduled_backup_unlock") {
+      if (interaction.user.id !== process.env.USER_ID) {
+        return interaction.reply({
+          content: "Not authorized.",
+          ephemeral: true
+        });
+      }
+
+      const modal = new ModalBuilder()
+        .setCustomId("scheduled_backup_modal")
+        .setTitle("Enter Backup Passcode")
+        .addComponents(
+          new ActionRowBuilder().addComponents(
+            new TextInputBuilder()
+              .setCustomId("backup_passcode")
+              .setLabel("Passcode")
+              .setStyle(TextInputStyle.Short)
+              .setRequired(true)
+          )
+        );
+
+      return interaction.showModal(modal);
+    }
+  }
+
+  // Modals (master backup + scheduled backup)
+  if (interaction.isModalSubmit()) {
+    if (
+      interaction.customId === "master_backup_modal" ||
+      interaction.customId === "scheduled_backup_modal"
+    ) {
+      if (interaction.user.id !== process.env.USER_ID) {
+        return interaction.reply({
+          content: "Not authorized.",
+          ephemeral: true
+        });
+      }
+
+      const passcode = interaction.fields.getTextInputValue("backup_passcode");
+      if (passcode !== process.env.MASTER_BACKUP_PASSWORD) {
+        return interaction.reply({
+          content: "Incorrect passcode. Backup cancelled.",
+          ephemeral: true
+        });
+      }
+
+      const files = [];
+
+      if (fs.existsSync(warnFile)) {
+        files.push({
+          attachment: fs.readFileSync(warnFile),
+          name: "warnCounts.json"
+        });
+      }
+
+      if (fs.existsSync(messageFile)) {
+        files.push({
+          attachment: fs.readFileSync(messageFile),
+          name: "messageCounts.json"
+        });
+      }
+
+      if (fs.existsSync(logFile)) {
+        files.push({
+          attachment: fs.readFileSync(logFile),
+          name: "logChannels.json"
+        });
+      }
+
+      if (fs.existsSync(muteConfigFile)) {
+        files.push({
+          attachment: fs.readFileSync(muteConfigFile),
+          name: "muteConfig.json"
+        });
+      }
+
+      if (!files.length) {
+        return interaction.reply({
+          content: "No backup files found.",
+          ephemeral: true
+        });
+      }
+
+      await interaction.reply({
+        content: "Master backup files:",
+        files,
+        ephemeral: true
+      });
+    }
   }
 });
+
+// === SECTION: SCHEDULED FRIDAY 8PM PST BACKUP ===
+let lastScheduledBackupKey = null;
+
+async function checkScheduledBackup() {
+  try {
+    const now = new Date();
+    const pstString = now.toLocaleString("en-US", {
+      timeZone: "America/Los_Angeles"
+    });
+    const pst = new Date(pstString);
+
+    const day = pst.getDay(); // 5 = Friday
+    const hour = pst.getHours(); // 20 = 8 PM
+    const minute = pst.getMinutes();
+
+    const key = `${pst.getFullYear()}-${pst.getMonth()}-${pst.getDate()}-${hour}-${minute}`;
+
+    if (day === 5 && hour === 20 && minute === 0) {
+      if (lastScheduledBackupKey === key) return;
+      lastScheduledBackupKey = key;
+
+      const userId = process.env.USER_ID;
+      if (!userId) return;
+
+      const user = await client.users.fetch(userId).catch(() => null);
+      if (!user) return;
+
+      const embed = new EmbedBuilder()
+        .setTitle("Scheduled Backup Ready")
+        .setDescription(
+          "Press the button below and enter your passcode to unlock your full backup."
+        )
+        .setColor(0x5865f2)
+        .setTimestamp();
+
+      const row = new ActionRowBuilder().addComponents(
+        new ButtonBuilder()
+          .setCustomId("scheduled_backup_unlock")
+          .setLabel("Unlock Backup")
+          .setStyle(ButtonStyle.Primary)
+      );
+
+      await user.send({ embeds: [embed], components: [row] }).catch(() => {});
+    }
+  } catch (err) {
+    console.error("Scheduled backup check failed:", err);
+  }
+}
 
 // === SECTION: PRESENCE ROTATION ===
 const presenceStates = [
@@ -1113,6 +1344,9 @@ client.on("ready", async () => {
 
   updatePresence();
   setInterval(updatePresence, 45000);
+
+  // Scheduled backup check every minute
+  setInterval(checkScheduledBackup, 60000);
 });
 
 // === SECTION: LOGIN ===
