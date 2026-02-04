@@ -53,6 +53,33 @@ if (fs.existsSync(messageFile)) {
   }
 }
 
+// Ensure per‑guild message data exists and is in `.live` format
+function ensureGuildMessageData(guildId) {
+  if (!messageCounts[guildId]) {
+    messageCounts[guildId] = {
+      live: {
+        count: 0,
+        scanned: false
+      }
+    };
+    return;
+  }
+
+  // Migrate old `{ count, scanned }` into `.live` if needed
+  if (!messageCounts[guildId].live) {
+    const old = messageCounts[guildId];
+    const count = typeof old.count === "number" ? old.count : 0;
+    const scanned = !!old.scanned;
+
+    messageCounts[guildId] = {
+      live: {
+        count,
+        scanned
+      }
+    };
+  }
+}
+
 function saveMessageCounts() {
   fs.writeFileSync(messageFile, JSON.stringify(messageCounts, null, 2));
 }
@@ -203,11 +230,9 @@ async function ensureMutedRole(guild) {
 async function scanGuildHistory(guild) {
   const guildId = guild.id;
 
-  if (!messageCounts[guildId]) {
-    messageCounts[guildId] = { count: 0, scanned: false };
-  }
+  ensureGuildMessageData(guildId);
 
-  if (messageCounts[guildId].scanned) {
+  if (messageCounts[guildId].live.scanned) {
     console.log(`Historical scan skipped for ${guild.name} (already scanned).`);
     return;
   }
@@ -245,8 +270,8 @@ async function scanGuildHistory(guild) {
     }
   }
 
-  messageCounts[guildId].count += total;
-  messageCounts[guildId].scanned = true;
+  messageCounts[guildId].live.count += total;
+  messageCounts[guildId].live.scanned = true;
   saveMessageCounts();
 
   console.log(
@@ -305,11 +330,9 @@ client.on("messageCreate", async message => {
 
   const guildId = message.guild.id;
 
-  if (!messageCounts[guildId]) {
-    messageCounts[guildId] = { count: 0, scanned: false };
-  }
+  ensureGuildMessageData(guildId);
 
-  messageCounts[guildId].count++;
+  messageCounts[guildId].live.count++;
   saveMessageCounts();
 
   const now = Date.now();
@@ -322,13 +345,13 @@ client.on("messageCreate", async message => {
 
     if (!channel) {
       channel = await message.guild.channels.create({
-        name: `Messages: ${messageCounts[guildId].count}`,
+        name: `Messages: ${messageCounts[guildId].live.count}`,
         type: ChannelType.GuildVoice
       });
     }
 
     if (channel.manageable) {
-      await channel.setName(`Messages: ${messageCounts[guildId].count}`);
+      await channel.setName(`Messages: ${messageCounts[guildId].live.count}`);
     }
   }
 });
@@ -485,8 +508,12 @@ client.on("interactionCreate", async interaction => {
       for (const g of client.guilds.cache.values()) {
         const id = g.id;
 
+        // Support both old and new structures, but always output `.live`
+        const live =
+          messageCounts[id]?.live || messageCounts[id] || { count: 0, scanned: false };
+
         backup[id] = {
-          live: messageCounts[id] || {}
+          live
         };
       }
 
@@ -1198,5 +1225,3 @@ client.on("debug", msg => {
     console.log("[DEBUG]", msg);
   }
 });
-
-
