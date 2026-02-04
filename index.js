@@ -6,7 +6,9 @@ const {
   ChannelType,
   EmbedBuilder,
   SlashCommandBuilder,
-  ActivityType
+  ActivityType,
+  ActionRowBuilder,
+  ChannelSelectMenuBuilder
 } = require("discord.js");
 const fs = require("fs");
 
@@ -86,6 +88,22 @@ function saveLogChannels() {
   fs.writeFileSync(logFile, JSON.stringify(logChannels, null, 2));
 }
 
+// === SECTION: STORAGE: MUTE CONFIG ===
+const muteConfigFile = "./muteConfig.json";
+let muteConfig = {};
+
+if (fs.existsSync(muteConfigFile)) {
+  try {
+    muteConfig = JSON.parse(fs.readFileSync(muteConfigFile, "utf8"));
+  } catch {
+    muteConfig = {};
+  }
+}
+
+function saveMuteConfig() {
+  fs.writeFileSync(muteConfigFile, JSON.stringify(muteConfig, null, 2));
+}
+
 // === SECTION: LOGGING HELPER ===
 async function sendLog(guild, embed) {
   const channelId = logChannels[guild.id];
@@ -101,20 +119,29 @@ async function sendLog(guild, embed) {
   }
 }
 
-// === SECTION: STORAGE: MUTE CONFIG ===
-const muteConfigFile = "./muteConfig.json";
-let muteConfig = {};
+// === SECTION: MUTE LOGGING HELPER ===
+async function logMuteAction(guild, data) {
+  const embed = new EmbedBuilder()
+    .setTitle(
+      data.type === "mute"
+        ? "Member Muted"
+        : data.type === "unmute"
+        ? "Member Unmuted"
+        : "Auto Unmute"
+    )
+    .addFields(
+      { name: "User", value: `${data.user.tag} (${data.user.id})` },
+      { name: "Moderator", value: `${data.moderator}` },
+      { name: "Reason", value: data.reason }
+    )
+    .setColor(data.type === "mute" ? 0xff0000 : 0x00ff00)
+    .setTimestamp();
 
-if (fs.existsSync(muteConfigFile)) {
-  try {
-    muteConfig = JSON.parse(fs.readFileSync(muteConfigFile, "utf8"));
-  } catch {
-    muteConfig = {};
+  if (data.duration) {
+    embed.addFields({ name: "Duration", value: data.duration });
   }
-}
 
-function saveMuteConfig() {
-  fs.writeFileSync(muteConfigFile, JSON.stringify(muteConfig, null, 2));
+  await sendLog(guild, embed);
 }
 
 // === SECTION: HELPERS ===
@@ -133,6 +160,37 @@ function parsePeriod(str) {
   };
 
   return num * map[unit];
+}
+
+function parseMuteDuration(str) {
+  return parsePeriod(str);
+}
+
+async function ensureMutedRole(guild) {
+  let mutedRole = guild.roles.cache.find(r => r.name === "Muted");
+  if (mutedRole) return mutedRole;
+
+  mutedRole = await guild.roles.create({
+    name: "Muted",
+    color: "#555555",
+    reason: "Muted role for moderation"
+  });
+
+  for (const [, channel] of guild.channels.cache) {
+    await channel.permissionOverwrites
+      .edit(mutedRole, {
+        SendMessages: false,
+        AddReactions: false,
+        Speak: false,
+        Connect: false,
+        SendMessagesInThreads: false,
+        CreatePublicThreads: false,
+        CreatePrivateThreads: false
+      })
+      .catch(() => {});
+  }
+
+  return mutedRole;
 }
 
 async function scanGuildHistory(guild) {
@@ -174,10 +232,8 @@ async function scanGuildHistory(guild) {
       total += messages.size;
       lastId = messages.last().id;
 
-      // Stop if we reached the end
       if (messages.size < 100) break;
 
-      // Rate limit safety
       await new Promise(res => setTimeout(res, 350));
     }
   }
@@ -186,7 +242,9 @@ async function scanGuildHistory(guild) {
   messageCounts[guildId].scanned = true;
   saveMessageCounts();
 
-  console.log(`Historical scan complete for ${guild.name}. Added ${total} messages.`);
+  console.log(
+    `Historical scan complete for ${guild.name}. Added ${total} messages.`
+  );
 }
 
 async function applyAutoPunish(interaction, member, currentWarnings) {
@@ -200,18 +258,38 @@ async function applyAutoPunish(interaction, member, currentWarnings) {
   const ms = parsePeriod(rule.duration);
   if (!ms) return null;
 
-  const reason = (rule.reason || "Timeout applied for {duration}.").replace(
-    "{duration}",
-    rule.duration
-  );
+  const mutedRole = await ensureMutedRole(interaction.guild);
+
+  const reasonTemplate =
+    rule.reason || "Muted for {duration} due to warning threshold.";
+  const reason = reasonTemplate.replace("{duration}", rule.duration);
 
   try {
-    await member.timeout(ms, reason);
+    await member.roles.add(mutedRole, reason);
   } catch {
-    return "Attempted auto-timeout but lacked permissions.";
+    return "Attempted auto-mute but lacked permissions.";
   }
 
-  return `Auto-timeout applied for **${rule.duration}**.`;
+  setTimeout(async () => {
+    const fresh = await interaction.guild.members
+      .fetch(member.id)
+      .catch(() => null);
+    if (!fresh) return;
+    if (!fresh.roles.cache.has(mutedRole.id)) return;
+
+    await fresh.roles.remove(mutedRole, "Auto-mute duration expired").catch(
+      () => {}
+    );
+
+    await logMuteAction(interaction.guild, {
+      type: "auto_unmute",
+      user: fresh.user,
+      moderator: "System",
+      reason: "Auto-mute duration expired"
+    });
+  }, ms);
+
+  return `Auto-mute applied for **${rule.duration}**.`;
 }
 
 // === SECTION: MESSAGE EVENT ===
@@ -292,20 +370,6 @@ const commands = [
     )
     .addSubcommand(sub =>
       sub
-        .setName("timeout")
-        .setDescription("Timeout a member")
-        .addUserOption(o =>
-          o.setName("user").setDescription("User").setRequired(true)
-        )
-        .addStringOption(o =>
-          o.setName("duration").setDescription("10m, 1h, 2d").setRequired(true)
-        )
-        .addStringOption(o =>
-          o.setName("reason").setDescription("Reason").setRequired(true)
-        )
-    )
-    .addSubcommand(sub =>
-      sub
         .setName("warnings")
         .setDescription("Check warnings")
         .addUserOption(o =>
@@ -342,7 +406,7 @@ const commands = [
     .addSubcommandGroup(group =>
       group
         .setName("autopunish")
-        .setDescription("Auto-timeout rules")
+        .setDescription("Auto-mute rules")
         .addSubcommand(sub =>
           sub
             .setName("add")
@@ -371,6 +435,45 @@ const commands = [
         .addSubcommand(sub =>
           sub.setName("clear").setDescription("Clear rules")
         )
+    )
+    .addSubcommand(sub =>
+      sub
+        .setName("mute")
+        .setDescription("Mute a member with optional duration")
+        .addUserOption(o =>
+          o.setName("user").setDescription("User to mute").setRequired(true)
+        )
+        .addStringOption(o =>
+          o
+            .setName("duration")
+            .setDescription("Duration (10m, 1h, 1d)")
+            .setRequired(false)
+        )
+        .addStringOption(o =>
+          o
+            .setName("reason")
+            .setDescription("Reason for mute")
+            .setRequired(true)
+        )
+    )
+    .addSubcommand(sub =>
+      sub
+        .setName("unmute")
+        .setDescription("Unmute a member")
+        .addUserOption(o =>
+          o.setName("user").setDescription("User to unmute").setRequired(true)
+        )
+        .addStringOption(o =>
+          o
+            .setName("reason")
+            .setDescription("Reason for unmute")
+            .setRequired(false)
+        )
+    )
+    .addSubcommand(sub =>
+      sub
+        .setName("setupmute")
+        .setDescription("Configure which channels muted users can use")
     )
 ].map(c => c.toJSON());
 
@@ -424,13 +527,14 @@ client.on("interactionCreate", async interaction => {
         counts[msg.author.id] = (counts[msg.author.id] || 0) + 1;
       }
 
-      const sorted = Object.entries(counts)
-        .sort((a, b) => b[1] - a[1])
-        .map(([id, count]) => {
-          const user = client.users.cache.get(id);
-          return `**${user ? user.username : id}** — ${count}`;
-        })
-        .join("\n") || "No messages.";
+      const sorted =
+        Object.entries(counts)
+          .sort((a, b) => b[1] - a[1])
+          .map(([id, count]) => {
+            const user = client.users.cache.get(id);
+            return `**${user ? user.username : id}** — ${count}`;
+          })
+          .join("\n") || "No messages.";
 
       const embed = new EmbedBuilder()
         .setTitle(`Users active in #${channel.name}`)
@@ -601,60 +705,6 @@ client.on("interactionCreate", async interaction => {
       return;
     }
 
-    // === timeout ===
-    if (sub === "timeout") {
-      const target = interaction.options.getUser("user");
-      const durationStr = interaction.options.getString("duration");
-      const reason = interaction.options.getString("reason");
-      const member = interaction.guild.members.cache.get(target.id);
-
-      if (!member) {
-        return interaction.reply({
-          content: "User not found.",
-          ephemeral: true
-        });
-      }
-
-      const ms = parsePeriod(durationStr);
-      if (!ms) {
-        return interaction.reply({
-          content: "Invalid duration.",
-          ephemeral: true
-        });
-      }
-
-      try {
-        await member.timeout(ms, reason);
-      } catch {
-        return interaction.reply({
-          content: "Failed to timeout user.",
-          ephemeral: true
-        });
-      }
-
-      const warnings = warnCounts[guildId].warnings;
-      warnings[target.id] = (warnings[target.id] || 0) + 1;
-      saveWarns();
-
-      await interaction.reply(
-        `Timed out **${target.username}** for **${durationStr}**.\nReason: ${reason}\nWarnings: **${warnings[target.id]}**`
-      );
-
-      const logEmbed = new EmbedBuilder()
-        .setTitle("Member Timed Out")
-        .addFields(
-          { name: "User", value: `${target.username} (${target.id})` },
-          { name: "Duration", value: durationStr },
-          { name: "Reason", value: reason },
-          { name: "Moderator", value: `${interaction.user.username}` }
-        )
-        .setColor(0xff6600)
-        .setTimestamp();
-
-      await sendLog(interaction.guild, logEmbed);
-      return;
-    }
-
     // === warnings ===
     if (sub === "warnings") {
       const target = interaction.options.getUser("user");
@@ -722,7 +772,7 @@ client.on("interactionCreate", async interaction => {
         saveWarns();
 
         await interaction.reply(
-          `Added rule: **${count} warnings** → **${duration}**`
+          `Added auto-mute rule: **${count} warnings** → **${duration}**`
         );
 
         const logEmbed = new EmbedBuilder()
@@ -756,7 +806,7 @@ client.on("interactionCreate", async interaction => {
         }
 
         await interaction.reply(
-          `Removed rule for **${count} warnings**.`
+          `Removed auto-mute rule for **${count} warnings**.`
         );
 
         const logEmbed = new EmbedBuilder()
@@ -774,7 +824,7 @@ client.on("interactionCreate", async interaction => {
 
       if (sub === "list") {
         if (!rules.length) {
-          return interaction.reply("No auto-timeout rules configured.");
+          return interaction.reply("No auto-mute rules configured.");
         }
 
         const lines = rules.map(r => {
@@ -792,7 +842,7 @@ client.on("interactionCreate", async interaction => {
         saveWarns();
 
         await interaction.reply(
-          `Cleared **${count}** auto-timeout rule(s).`
+          `Cleared **${count}** auto-mute rule(s).`
         );
 
         const logEmbed = new EmbedBuilder()
@@ -807,6 +857,217 @@ client.on("interactionCreate", async interaction => {
         return;
       }
     }
+
+    // === /moderator mute ===
+    if (sub === "mute") {
+      const user = interaction.options.getUser("user");
+      const durationStr = interaction.options.getString("duration");
+      const reason = interaction.options.getString("reason"); // required
+
+      const member = interaction.guild.members.cache.get(user.id);
+      if (!member) {
+        return interaction.reply({
+          content: "User not found.",
+          ephemeral: true
+        });
+      }
+
+      const mutedRole = await ensureMutedRole(interaction.guild);
+
+      if (member.roles.cache.has(mutedRole.id)) {
+        return interaction.reply({
+          content: "That user is already muted.",
+          ephemeral: true
+        });
+      }
+
+      await member.roles.add(mutedRole, reason);
+
+      let durationLabel = "Indefinite";
+      const ms = parseMuteDuration(durationStr);
+
+      if (ms) {
+        durationLabel = durationStr;
+
+        setTimeout(async () => {
+          const fresh = await interaction.guild.members
+            .fetch(user.id)
+            .catch(() => null);
+          if (!fresh) return;
+          if (!fresh.roles.cache.has(mutedRole.id)) return;
+
+          await fresh.roles
+            .remove(mutedRole, "Timed mute expired")
+            .catch(() => {});
+
+          await logMuteAction(interaction.guild, {
+            type: "auto_unmute",
+            user,
+            moderator: "System",
+            reason: "Timed mute expired"
+          });
+        }, ms);
+      }
+
+      await interaction.reply({
+        embeds: [
+          new EmbedBuilder()
+            .setTitle("Member Muted")
+            .setDescription(
+              `${user} has been muted.\n**Reason:** ${reason}\n**Duration:** ${durationLabel}`
+            )
+            .setColor(0xff0000)
+        ]
+      });
+
+      await logMuteAction(interaction.guild, {
+        type: "mute",
+        user,
+        moderator: interaction.user.tag,
+        reason,
+        duration: durationLabel
+      });
+
+      return;
+    }
+
+    // === /moderator unmute ===
+    if (sub === "unmute") {
+      const user = interaction.options.getUser("user");
+      const reason =
+        interaction.options.getString("reason") || "No reason provided";
+
+      const member = interaction.guild.members.cache.get(user.id);
+      if (!member) {
+        return interaction.reply({
+          content: "User not found.",
+          ephemeral: true
+        });
+      }
+
+      const mutedRole = await ensureMutedRole(interaction.guild);
+
+      if (!member.roles.cache.has(mutedRole.id)) {
+        return interaction.reply({
+          content: "That user is not muted.",
+          ephemeral: true
+        });
+      }
+
+      await member.roles.remove(mutedRole, reason);
+
+      await interaction.reply({
+        embeds: [
+          new EmbedBuilder()
+            .setTitle("Member Unmuted")
+            .setDescription(`${user} has been unmuted.\n**Reason:** ${reason}`)
+            .setColor(0x00ff00)
+        ]
+      });
+
+      await logMuteAction(interaction.guild, {
+        type: "unmute",
+        user,
+        moderator: interaction.user.tag,
+        reason
+      });
+
+      return;
+    }
+
+    // === /moderator setupmute ===
+    if (sub === "setupmute") {
+      if (!muteConfig[guildId]) {
+        muteConfig[guildId] = { appeal: [], tickets: [] };
+        saveMuteConfig();
+      }
+
+      return interaction.reply({
+        embeds: [
+          new EmbedBuilder()
+            .setTitle("Muted Role Setup")
+            .setDescription(
+              "Select which channels muted users are allowed to use for **appeals** and **tickets**.\nMuted users remain blocked everywhere else."
+            )
+            .setColor(0x5865f2)
+        ],
+        components: [
+          new ActionRowBuilder().addComponents(
+            new ChannelSelectMenuBuilder()
+              .setCustomId("mute_appeal_channels")
+              .setPlaceholder("Select appeal channels")
+              .setMinValues(1)
+              .setMaxValues(5)
+          ),
+          new ActionRowBuilder().addComponents(
+            new ChannelSelectMenuBuilder()
+              .setCustomId("mute_ticket_channels")
+              .setPlaceholder("Select ticket channels")
+              .setMinValues(1)
+              .setMaxValues(5)
+          )
+        ]
+      });
+    }
+  }
+});
+
+// === SECTION: COMPONENT HANDLER (MUTE SETUP) ===
+client.on("interactionCreate", async interaction => {
+  if (!interaction.isChannelSelectMenu()) return;
+
+  const guild = interaction.guild;
+  if (!guild) return;
+  const guildId = guild.id;
+
+  const mutedRole = await ensureMutedRole(guild);
+
+  if (!muteConfig[guildId]) {
+    muteConfig[guildId] = { appeal: [], tickets: [] };
+  }
+
+  if (interaction.customId === "mute_appeal_channels") {
+    muteConfig[guildId].appeal = interaction.values;
+    saveMuteConfig();
+
+    for (const id of interaction.values) {
+      const ch = guild.channels.cache.get(id);
+      if (!ch) continue;
+
+      await ch.permissionOverwrites
+        .edit(mutedRole, {
+          SendMessages: true,
+          UseApplicationCommands: true
+        })
+        .catch(() => {});
+    }
+
+    return interaction.reply({
+      content: "Appeal channels updated for muted users.",
+      ephemeral: true
+    });
+  }
+
+  if (interaction.customId === "mute_ticket_channels") {
+    muteConfig[guildId].tickets = interaction.values;
+    saveMuteConfig();
+
+    for (const id of interaction.values) {
+      const ch = guild.channels.cache.get(id);
+      if (!ch) continue;
+
+      await ch.permissionOverwrites
+        .edit(mutedRole, {
+          SendMessages: true,
+          UseApplicationCommands: true
+        })
+        .catch(() => {});
+    }
+
+    return interaction.reply({
+      content: "Ticket channels updated for muted users.",
+      ephemeral: true
+    });
   }
 });
 
@@ -833,10 +1094,10 @@ let statusIndex = 0;
 client.on("ready", async () => {
   console.log(`Ready as ${client.user.tag}`);
 
-  for (const guild of client.guilds.cache.values()) { 
+  for (const guild of client.guilds.cache.values()) {
     await scanGuildHistory(guild);
   }
-  
+
   const updatePresence = () => {
     const current = presenceStates[presenceIndex];
     const status = statusCycle[statusIndex];
@@ -858,25 +1119,11 @@ client.on("ready", async () => {
 client.login(process.env.TOKEN);
 
 client.on("debug", msg => {
-  if (msg.includes("Connecting") || msg.includes("IDENTIFY") || msg.includes("READY")) {
+  if (
+    msg.includes("Connecting") ||
+    msg.includes("IDENTIFY") ||
+    msg.includes("READY")
+  ) {
     console.log("[DEBUG]", msg);
   }
 });
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
