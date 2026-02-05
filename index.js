@@ -62,10 +62,7 @@ function ensureGuildMessageData(guildId) {
     const count = typeof old.count === "number" ? old.count : 0;
     const scanned = !!old.scanned;
 
-    messageCounts[guildId] = {
-      live: { count, scanned },
-      progress: messageCounts[guildId].progress || { channels: {}, complete: false }
-    };
+    messageCounts[guildId].live = { count, scanned };
   }
 
   if (!messageCounts[guildId].progress) {
@@ -218,13 +215,11 @@ async function ensureMutedRole(guild) {
 
   return mutedRole;
 }
-
 // === SECTION: INCREMENTAL, RESUMABLE, DYNAMIC HISTORICAL SCAN ENGINE ===
 async function scanGuildHistory(guild) {
   const guildId = guild.id;
 
   ensureGuildMessageData(guildId);
-
   const progress = messageCounts[guildId].progress;
 
   const channels = guild.channels.cache
@@ -248,11 +243,11 @@ async function scanGuildHistory(guild) {
       const channel = guild.channels.cache.get(channelId);
       if (!channel) {
         chProg.done = true;
+        console.log(`Channel ${channelId} missing; marking done for guild ${guild.name}`);
         continue;
       }
 
       const batchSize = getDynamicBatchSize();
-
       const fetchOptions = { limit: batchSize };
       if (chProg.lastMessageId) fetchOptions.before = chProg.lastMessageId;
 
@@ -261,7 +256,8 @@ async function scanGuildHistory(guild) {
 
       try {
         messages = await channel.messages.fetch(fetchOptions);
-      } catch {
+      } catch (err) {
+        console.error(`Fetch error in ${guild.name}#${channelId}:`, err.message);
         recordScanLatency(2000);
         return true;
       }
@@ -271,6 +267,7 @@ async function scanGuildHistory(guild) {
 
       if (messages.size === 0) {
         chProg.done = true;
+        console.log(`Channel ${channel.name || channelId} done for guild ${guild.name}`);
         saveMessageCounts();
         return true;
       }
@@ -295,6 +292,7 @@ async function scanGuildHistory(guild) {
 
     progress.complete = true;
     messageCounts[guildId].live.scanned = true;
+    console.log(`Incremental scan complete for guild ${guild.name}`);
     saveMessageCounts();
     return false;
   }
@@ -313,7 +311,9 @@ function recordScanLatency(ms) {
 
 client.on("messageCreate", () => {
   recentMessageBursts++;
-  setTimeout(() => recentMessageBursts--, 5000);
+  setTimeout(() => {
+    recentMessageBursts = Math.max(0, recentMessageBursts - 1);
+  }, 5000);
 });
 
 // === DYNAMIC BATCH SIZE ===
@@ -346,13 +346,15 @@ function getDynamicDelay() {
 async function scanTick() {
   for (const guild of client.guilds.cache.values()) {
     const guildId = guild.id;
-
     ensureGuildMessageData(guildId);
 
     if (messageCounts[guildId].live.scanned) continue;
 
     const engine = await scanGuildHistory(guild);
-    await engine.processOneStep();
+    const didWork = await engine.processOneStep();
+    if (didWork) {
+      console.log(`Incremental scan step executed for guild ${guild.name}`);
+    }
   }
 
   setTimeout(scanTick, getDynamicDelay());
@@ -409,7 +411,6 @@ client.on("messageCreate", async message => {
   if (!message.guild || message.author.bot) return;
 
   const guildId = message.guild.id;
-
   ensureGuildMessageData(guildId);
 
   messageCounts[guildId].live.count++;
@@ -435,7 +436,6 @@ client.on("messageCreate", async message => {
     }
   }
 });
-
 // === SECTION: SLASH COMMAND HANDLER ===
 client.on("interactionCreate", async interaction => {
   if (!interaction.isChatInputCommand()) return;
@@ -1077,7 +1077,6 @@ client.on("interactionCreate", async interaction => {
     }
   }
 });
-
 // === SECTION: COMPONENT HANDLER (MUTE SETUP + BACKUP BUTTONS/MODALS + RESCAN) ===
 client.on("interactionCreate", async interaction => {
   // === RESCAN GUILD SELECT ===
@@ -1212,7 +1211,7 @@ client.on("interactionCreate", async interaction => {
     }
   }
 
-  // === BACKUP MODALS (MASTER + SCHEDULED + RESCAN) ===
+  // === BACKUP & RESCAN MODALS ===
   if (interaction.isModalSubmit()) {
     const id = interaction.customId;
 
@@ -1351,6 +1350,7 @@ client.on("interactionCreate", async interaction => {
         });
       }
 
+      ensureGuildMessageData(guildId);
       messageCounts[guildId].live.scanned = false;
       messageCounts[guildId].progress = { channels: {}, complete: false };
       saveMessageCounts();
@@ -1399,8 +1399,13 @@ client.on("interactionCreate", async interaction => {
   }
 });
 
-// === SECTION: STARTUP SCAN ===
-client.on("ready", async () => {
+// === SECTION: STARTUP SCAN (READY + CLIENTREADY) ===
+let startupInitialized = false;
+
+async function initializeStartup() {
+  if (startupInitialized) return;
+  startupInitialized = true;
+
   console.log(`Logged in as ${client.user.tag}`);
 
   for (const guild of client.guilds.cache.values()) {
@@ -1410,7 +1415,10 @@ client.on("ready", async () => {
 
   console.log("Starting incremental background scan engine...");
   scanTick();
-});
+}
+
+client.once("ready", initializeStartup);
+client.once("clientReady", initializeStartup);
 
 // === SECTION: LOGIN ===
 client.login(process.env.TOKEN);
