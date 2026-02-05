@@ -1,6 +1,3 @@
-await rest.put(Routes.applicationCommands(CLIENT_ID), { body: [] });
-console.log("Cleared ALL global commands.");
-
 // === SECTION: IMPORTS ===
 const { REST, Routes, SlashCommandBuilder } = require("discord.js");
 require("dotenv").config();
@@ -224,6 +221,13 @@ const rest = new REST({ version: "10" }).setToken(TOKEN);
       Boolean
     );
 
+    // OPTIONAL ONE-TIME NUKE:
+    // Uncomment this block, run once to clear ALL global commands,
+    // then comment it out again.
+    //
+    // await rest.put(Routes.applicationCommands(CLIENT_ID), { body: [] });
+    // console.log("Cleared ALL global commands.");
+
     // Deploy guild commands
     for (const guildId of GUILDS) {
       await rest.put(
@@ -233,7 +237,7 @@ const rest = new REST({ version: "10" }).setToken(TOKEN);
       console.log(`Guild commands deployed to guild ${guildId}`);
     }
 
-    // Deploy global commands
+    // Deploy global commands (only /backup)
     await rest.put(Routes.applicationCommands(CLIENT_ID), {
       body: globalCommands
     });
@@ -244,5 +248,3 @@ const rest = new REST({ version: "10" }).setToken(TOKEN);
     console.error(err);
   }
 })();
-
-
