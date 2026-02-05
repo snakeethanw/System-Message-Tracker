@@ -2,11 +2,11 @@
 const { REST, Routes, SlashCommandBuilder } = require("discord.js");
 require("dotenv").config();
 
-// === SECTION: COMMAND ARRAY ===
+// === SECTION: COMMAND ARRAYS ===
 const guildCommands = [];
 const globalCommands = [];
 
-// === SECTION: /messages COMMAND (GUILD) ===
+// === SECTION: /messages (GUILD) ===
 guildCommands.push(
   new SlashCommandBuilder()
     .setName("messages")
@@ -36,13 +36,13 @@ guildCommands.push(
     .toJSON()
 );
 
-// === SECTION: /moderator COMMAND (GUILD) ===
+// === SECTION: /moderator (GUILD) ===
 guildCommands.push(
   new SlashCommandBuilder()
     .setName("moderator")
     .setDescription("Moderation tools")
 
-    // === setlog ===
+    // setlog
     .addSubcommand(sub =>
       sub
         .setName("setlog")
@@ -52,7 +52,14 @@ guildCommands.push(
         )
     )
 
-    // === warn ===
+    // rescan
+    .addSubcommand(sub =>
+      sub
+        .setName("rescan")
+        .setDescription("Rescan message history for a guild")
+    )
+
+    // warn
     .addSubcommand(sub =>
       sub
         .setName("warn")
@@ -65,44 +72,44 @@ guildCommands.push(
         )
     )
 
-    // === warnings ===
+    // warnings
     .addSubcommand(sub =>
       sub
         .setName("warnings")
-        .setDescription("Check warnings")
+        .setDescription("Check warnings for a user")
         .addUserOption(o =>
           o.setName("user").setDescription("User").setRequired(true)
         )
     )
 
-    // === clearwarns ===
+    // clearwarns
     .addSubcommand(sub =>
       sub
         .setName("clearwarns")
-        .setDescription("Clear warnings")
+        .setDescription("Clear warnings for a user")
         .addUserOption(o =>
           o.setName("user").setDescription("User").setRequired(true)
         )
     )
 
-    // === backupwarns ===
+    // backupwarns
     .addSubcommand(sub =>
       sub.setName("backupwarns").setDescription("Backup warn data")
     )
 
-    // === backupmessages ===
+    // backupmessages
     .addSubcommand(sub =>
       sub.setName("backupmessages").setDescription("Backup message data")
     )
 
-    // === backuplogchannels ===
+    // backuplogchannels
     .addSubcommand(sub =>
       sub
         .setName("backuplogchannels")
         .setDescription("Backup log channel settings for all guilds")
     )
 
-    // === autopunish group (auto-mute rules) ===
+    // autopunish group
     .addSubcommandGroup(group =>
       group
         .setName("autopunish")
@@ -111,92 +118,76 @@ guildCommands.push(
         .addSubcommand(sub =>
           sub
             .setName("add")
-            .setDescription("Add rule")
+            .setDescription("Add auto-mute rule")
             .addIntegerOption(o =>
-              o.setName("warnings").setDescription("Count").setRequired(true)
+              o.setName("warnings").setDescription("Warning count").setRequired(true)
             )
             .addStringOption(o =>
-              o.setName("duration").setDescription("10m, 1h").setRequired(true)
+              o.setName("duration").setDescription("10m, 1h, 1d").setRequired(true)
             )
             .addStringOption(o =>
-              o.setName("reason").setDescription("Template").setRequired(false)
+              o.setName("reason").setDescription("Reason template").setRequired(false)
             )
         )
 
         .addSubcommand(sub =>
           sub
             .setName("remove")
-            .setDescription("Remove rule")
+            .setDescription("Remove auto-mute rule")
             .addIntegerOption(o =>
-              o.setName("warnings").setDescription("Count").setRequired(true)
+              o.setName("warnings").setDescription("Warning count").setRequired(true)
             )
         )
 
         .addSubcommand(sub =>
-          sub.setName("list").setDescription("List rules")
+          sub.setName("list").setDescription("List auto-mute rules")
         )
 
         .addSubcommand(sub =>
-          sub.setName("clear").setDescription("Clear rules")
+          sub.setName("clear").setDescription("Clear all auto-mute rules")
         )
     )
 
-    // === mute ===
+    // mute
     .addSubcommand(sub =>
       sub
         .setName("mute")
-        .setDescription("Mute a member with optional duration")
+        .setDescription("Mute a member")
         .addUserOption(o =>
-          o.setName("user").setDescription("User to mute").setRequired(true)
+          o.setName("user").setDescription("User").setRequired(true)
         )
         .addStringOption(o =>
-          o
-            .setName("duration")
-            .setDescription("Duration (10m, 1h, 1d)")
-            .setRequired(false)
+          o.setName("duration").setDescription("Optional duration").setRequired(false)
         )
         .addStringOption(o =>
-          o
-            .setName("reason")
-            .setDescription("Reason for mute")
-            .setRequired(true)
+          o.setName("reason").setDescription("Reason").setRequired(true)
         )
     )
 
-    // === unmute ===
+    // unmute
     .addSubcommand(sub =>
       sub
         .setName("unmute")
         .setDescription("Unmute a member")
         .addUserOption(o =>
-          o.setName("user").setDescription("User to unmute").setRequired(true)
+          o.setName("user").setDescription("User").setRequired(true)
         )
         .addStringOption(o =>
-          o
-            .setName("reason")
-            .setDescription("Reason for unmute")
-            .setRequired(false)
+          o.setName("reason").setDescription("Reason").setRequired(false)
         )
     )
 
-    // === setupmute ===
+    // setupmute
     .addSubcommand(sub =>
       sub
         .setName("setupmute")
-        .setDescription("Configure which channels muted users can use")
-    )
-
-    // === rescan ===
-    .addSubcommand(sub =>
-      sub
-        .setName("rescan")
-        .setDescription("Force a historical rescan (owner only)")
+        .setDescription("Configure channels muted users can use")
     )
 
     .toJSON()
 );
 
-// === SECTION: /backup COMMAND (GLOBAL) ===
+// === SECTION: /backup (GLOBAL) ===
 globalCommands.push(
   new SlashCommandBuilder()
     .setName("backup")
@@ -224,16 +215,7 @@ const rest = new REST({ version: "10" }).setToken(TOKEN);
   try {
     console.log("Deploying slash commands...");
 
-    const GUILDS = [process.env.GUILD_ID_1, process.env.GUILD_ID_2].filter(
-      Boolean
-    );
-
-    // OPTIONAL ONE-TIME NUKE:
-    // Uncomment this block, run once to clear ALL global commands,
-    // then comment it out again.
-    //
-    // await rest.put(Routes.applicationCommands(CLIENT_ID), { body: [] });
-    // console.log("Cleared ALL global commands.");
+    const GUILDS = [process.env.GUILD_ID_1, process.env.GUILD_ID_2].filter(Boolean);
 
     // Deploy guild commands
     for (const guildId of GUILDS) {
@@ -244,7 +226,7 @@ const rest = new REST({ version: "10" }).setToken(TOKEN);
       console.log(`Guild commands deployed to guild ${guildId}`);
     }
 
-    // Deploy global commands (only /backup)
+    // Deploy global commands
     await rest.put(Routes.applicationCommands(CLIENT_ID), {
       body: globalCommands
     });
