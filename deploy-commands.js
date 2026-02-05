@@ -186,6 +186,13 @@ guildCommands.push(
         .setDescription("Configure which channels muted users can use")
     )
 
+    // === rescan ===
+    .addSubcommand(sub =>
+      sub
+        .setName("rescan")
+        .setDescription("Force a historical rescan (owner only)")
+    )
+
     .toJSON()
 );
 
@@ -225,8 +232,8 @@ const rest = new REST({ version: "10" }).setToken(TOKEN);
     // Uncomment this block, run once to clear ALL global commands,
     // then comment it out again.
     //
-    await rest.put(Routes.applicationCommands(CLIENT_ID), { body: [] });
-    console.log("Cleared ALL global commands.");
+    // await rest.put(Routes.applicationCommands(CLIENT_ID), { body: [] });
+    // console.log("Cleared ALL global commands.");
 
     // Deploy guild commands
     for (const guildId of GUILDS) {
@@ -248,4 +255,3 @@ const rest = new REST({ version: "10" }).setToken(TOKEN);
     console.error(err);
   }
 })();
-
