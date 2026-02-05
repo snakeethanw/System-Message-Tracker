@@ -51,7 +51,8 @@ if (fs.existsSync(messageFile)) {
 function ensureGuildMessageData(guildId) {
   if (!messageCounts[guildId]) {
     messageCounts[guildId] = {
-      live: { count: 0, scanned: false }
+      live: { count: 0, scanned: false },
+      progress: { channels: {}, complete: false }
     };
     return;
   }
@@ -62,8 +63,13 @@ function ensureGuildMessageData(guildId) {
     const scanned = !!old.scanned;
 
     messageCounts[guildId] = {
-      live: { count, scanned }
+      live: { count, scanned },
+      progress: messageCounts[guildId].progress || { channels: {}, complete: false }
     };
+  }
+
+  if (!messageCounts[guildId].progress) {
+    messageCounts[guildId].progress = { channels: {}, complete: false };
   }
 }
 
@@ -124,6 +130,7 @@ if (fs.existsSync(muteConfigFile)) {
 function saveMuteConfig() {
   fs.writeFileSync(muteConfigFile, JSON.stringify(muteConfig, null, 2));
 }
+
 // === SECTION: LOGGING HELPERS ===
 async function sendLog(guild, embed) {
   const channelId = logChannels[guild.id];
@@ -212,56 +219,145 @@ async function ensureMutedRole(guild) {
   return mutedRole;
 }
 
-// === SECTION: HISTORICAL SCAN ===
+// === SECTION: INCREMENTAL, RESUMABLE, DYNAMIC HISTORICAL SCAN ENGINE ===
 async function scanGuildHistory(guild) {
   const guildId = guild.id;
 
   ensureGuildMessageData(guildId);
 
-  if (messageCounts[guildId].live.scanned) {
-    console.log(`Skipping historical scan for ${guild.name} (already scanned).`);
-    return;
-  }
+  const progress = messageCounts[guildId].progress;
 
-  console.log(`Starting historical scan for ${guild.name}...`);
+  const channels = guild.channels.cache
+    .filter(ch => ch.isTextBased())
+    .sort((a, b) => BigInt(a.id) - BigInt(b.id))
+    .map(ch => ch.id);
 
-  let total = 0;
-
-  for (const channel of guild.channels.cache.values()) {
-    if (channel.type !== ChannelType.GuildText) continue;
-
-    let lastId = null;
-
-    while (true) {
-      const options = { limit: 100 };
-      if (lastId) options.before = lastId;
-
-      let messages;
-      try {
-        messages = await channel.messages.fetch(options);
-      } catch {
-        break;
-      }
-
-      if (messages.size === 0) break;
-
-      total += messages.size;
-      lastId = messages.last().id;
-
-      if (messages.size < 100) break;
-
-      await new Promise(res => setTimeout(res, 350));
+  for (const id of channels) {
+    if (!progress.channels[id]) {
+      progress.channels[id] = { done: false, lastMessageId: null };
     }
   }
 
-  messageCounts[guildId].live.count += total;
-  messageCounts[guildId].live.scanned = true;
-  saveMessageCounts();
+  async function processOneStep() {
+    if (progress.complete) return false;
 
-  console.log(
-    `Historical scan complete for ${guild.name}. Added ${total} messages.`
-  );
+    for (const channelId of channels) {
+      const chProg = progress.channels[channelId];
+      if (chProg.done) continue;
+
+      const channel = guild.channels.cache.get(channelId);
+      if (!channel) {
+        chProg.done = true;
+        continue;
+      }
+
+      const batchSize = getDynamicBatchSize();
+
+      const fetchOptions = { limit: batchSize };
+      if (chProg.lastMessageId) fetchOptions.before = chProg.lastMessageId;
+
+      const start = Date.now();
+      let messages;
+
+      try {
+        messages = await channel.messages.fetch(fetchOptions);
+      } catch {
+        recordScanLatency(2000);
+        return true;
+      }
+
+      const duration = Date.now() - start;
+      recordScanLatency(duration);
+
+      if (messages.size === 0) {
+        chProg.done = true;
+        saveMessageCounts();
+        return true;
+      }
+
+      let lastId = null;
+      for (const msg of messages.values()) {
+        lastId = msg.id;
+
+        if (
+          msg.author?.bot ||
+          msg.webhookId ||
+          msg.type !== 0
+        ) continue;
+
+        messageCounts[guildId].live.count++;
+      }
+
+      chProg.lastMessageId = lastId;
+      saveMessageCounts();
+      return true;
+    }
+
+    progress.complete = true;
+    messageCounts[guildId].live.scanned = true;
+    saveMessageCounts();
+    return false;
+  }
+
+  return { processOneStep };
 }
+
+// === DYNAMIC PERFORMANCE MEMORY ===
+let recentLatencies = [];
+let recentMessageBursts = 0;
+
+function recordScanLatency(ms) {
+  recentLatencies.push(ms);
+  if (recentLatencies.length > 20) recentLatencies.shift();
+}
+
+client.on("messageCreate", () => {
+  recentMessageBursts++;
+  setTimeout(() => recentMessageBursts--, 5000);
+});
+
+// === DYNAMIC BATCH SIZE ===
+function getDynamicBatchSize() {
+  const avg = recentLatencies.length
+    ? recentLatencies.reduce((a, b) => a + b, 0) / recentLatencies.length
+    : 200;
+
+  if (recentMessageBursts > 20) return 10;
+  if (avg > 1500) return 10;
+  if (avg > 800) return 25;
+  if (avg > 400) return 50;
+  return 100;
+}
+
+// === DYNAMIC DELAY ===
+function getDynamicDelay() {
+  const avg = recentLatencies.length
+    ? recentLatencies.reduce((a, b) => a + b, 0) / recentLatencies.length
+    : 200;
+
+  if (recentMessageBursts > 20) return 1200;
+  if (avg > 1500) return 1200;
+  if (avg > 800) return 900;
+  if (avg > 400) return 600;
+  return 300;
+}
+
+// === GLOBAL SCAN SCHEDULER ===
+async function scanTick() {
+  for (const guild of client.guilds.cache.values()) {
+    const guildId = guild.id;
+
+    ensureGuildMessageData(guildId);
+
+    if (messageCounts[guildId].live.scanned) continue;
+
+    const engine = await scanGuildHistory(guild);
+    await engine.processOneStep();
+  }
+
+  setTimeout(scanTick, getDynamicDelay());
+}
+
 // === SECTION: AUTO-PUNISH (AUTO-MUTE) ===
 async function applyAutoPunish(interaction, member, currentWarnings) {
   const guildId = interaction.guild.id;
@@ -416,6 +512,7 @@ client.on("interactionCreate", async interaction => {
       return interaction.reply({ embeds: [embed] });
     }
   }
+
   // === /moderator ===
   if (interaction.commandName === "moderator") {
     if (!guild) {
@@ -622,6 +719,7 @@ client.on("interactionCreate", async interaction => {
       await sendLog(interaction.guild, logEmbed);
       return;
     }
+
     // === warnings ===
     if (sub === "warnings") {
       const target = interaction.options.getUser("user");
@@ -847,6 +945,7 @@ client.on("interactionCreate", async interaction => {
 
       return;
     }
+
     // === /moderator unmute ===
     if (sub === "unmute") {
       const user = interaction.options.getUser("user");
@@ -1112,6 +1211,7 @@ client.on("interactionCreate", async interaction => {
       return interaction.showModal(modal);
     }
   }
+
   // === BACKUP MODALS (MASTER + SCHEDULED + RESCAN) ===
   if (interaction.isModalSubmit()) {
     const id = interaction.customId;
@@ -1251,17 +1351,16 @@ client.on("interactionCreate", async interaction => {
         });
       }
 
+      messageCounts[guildId].live.scanned = false;
+      messageCounts[guildId].progress = { channels: {}, complete: false };
+      saveMessageCounts();
+
       await interaction.reply({
-        content: `Rescanning **${guild.name}**...`,
+        content: `Rescan started for **${guild.name}**. Running in background.`,
         ephemeral: true
       });
 
-      await scanGuildHistory(guild);
-
-      return interaction.followUp({
-        content: `Rescan complete for **${guild.name}**.`,
-        ephemeral: true
-      });
+      return;
     }
 
     // === GLOBAL RESCAN ===
@@ -1282,19 +1381,20 @@ client.on("interactionCreate", async interaction => {
         });
       }
 
-      await interaction.reply({
-        content: "Starting **global rescan**...",
-        ephemeral: true
-      });
-
       for (const guild of client.guilds.cache.values()) {
-        await scanGuildHistory(guild);
+        const gid = guild.id;
+        ensureGuildMessageData(gid);
+        messageCounts[gid].live.scanned = false;
+        messageCounts[gid].progress = { channels: {}, complete: false };
       }
+      saveMessageCounts();
 
-      return interaction.followUp({
-        content: "Global rescan complete.",
+      await interaction.reply({
+        content: "Global rescan started. Running in background.",
         ephemeral: true
       });
+
+      return;
     }
   }
 });
@@ -1304,15 +1404,12 @@ client.on("ready", async () => {
   console.log(`Logged in as ${client.user.tag}`);
 
   for (const guild of client.guilds.cache.values()) {
-    ensureGuildMessageData(guild.id);
-
-    if (!messageCounts[guild.id].live.scanned) {
-      console.log(`Performing startup scan for ${guild.name}...`);
-      await scanGuildHistory(guild);
-    }
+    const guildId = guild.id;
+    ensureGuildMessageData(guildId);
   }
 
-  console.log("Startup scan complete.");
+  console.log("Starting incremental background scan engine...");
+  scanTick();
 });
 
 // === SECTION: LOGIN ===
