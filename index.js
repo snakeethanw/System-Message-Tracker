@@ -7,6 +7,7 @@ const {
   EmbedBuilder,
   ActivityType,
   ActionRowBuilder,
+  StringSelectMenuBuilder,
   ChannelSelectMenuBuilder,
   ButtonBuilder,
   ButtonStyle,
@@ -123,7 +124,6 @@ if (fs.existsSync(muteConfigFile)) {
 function saveMuteConfig() {
   fs.writeFileSync(muteConfigFile, JSON.stringify(muteConfig, null, 2));
 }
-
 // === SECTION: LOGGING HELPERS ===
 async function sendLog(guild, embed) {
   const channelId = logChannels[guild.id];
@@ -262,6 +262,51 @@ async function scanGuildHistory(guild) {
     `Historical scan complete for ${guild.name}. Added ${total} messages.`
   );
 }
+// === SECTION: AUTO-PUNISH (AUTO-MUTE) ===
+async function applyAutoPunish(interaction, member, currentWarnings) {
+  const guildId = interaction.guild.id;
+  ensureGuildWarnData(guildId);
+
+  const rules = warnCounts[guildId].autopunish;
+  const rule = rules.find(r => r.warnings === currentWarnings);
+  if (!rule) return null;
+
+  const ms = parsePeriod(rule.duration);
+  if (!ms) return null;
+
+  const mutedRole = await ensureMutedRole(interaction.guild);
+
+  const reasonTemplate =
+    rule.reason || "Muted for {duration} due to warning threshold.";
+  const reason = reasonTemplate.replace("{duration}", rule.duration);
+
+  try {
+    await member.roles.add(mutedRole, reason);
+  } catch {
+    return "Attempted auto-mute but lacked permissions.";
+  }
+
+  setTimeout(async () => {
+    const fresh = await interaction.guild.members
+      .fetch(member.id)
+      .catch(() => null);
+    if (!fresh) return;
+    if (!fresh.roles.cache.has(mutedRole.id)) return;
+
+    await fresh.roles
+      .remove(mutedRole, "Auto-mute duration expired")
+      .catch(() => {});
+
+    await logMuteAction(interaction.guild, {
+      type: "auto_unmute",
+      user: fresh.user,
+      moderator: "System",
+      reason: "Auto-mute duration expired"
+    });
+  }, ms);
+
+  return `Auto-mute applied for **${rule.duration}**.`;
+}
 
 // === SECTION: MESSAGE EVENT ===
 client.on("messageCreate", async message => {
@@ -371,7 +416,6 @@ client.on("interactionCreate", async interaction => {
       return interaction.reply({ embeds: [embed] });
     }
   }
-
   // === /moderator ===
   if (interaction.commandName === "moderator") {
     if (!guild) {
@@ -427,11 +471,10 @@ client.on("interactionCreate", async interaction => {
       });
 
       const row = new ActionRowBuilder().addComponents(
-        new ChannelSelectMenuBuilder()
+        new StringSelectMenuBuilder()
           .setCustomId("rescan_guild_select")
           .setPlaceholder("Select a guild to rescan")
-          .setMinValues(1)
-          .setMaxValues(1)
+          .addOptions(options)
       );
 
       return interaction.reply({
@@ -535,7 +578,7 @@ client.on("interactionCreate", async interaction => {
         ephemeral: true
       });
     }
-    
+
     // === warn ===
     if (sub === "warn") {
       const target = interaction.options.getUser("user");
@@ -579,7 +622,6 @@ client.on("interactionCreate", async interaction => {
       await sendLog(interaction.guild, logEmbed);
       return;
     }
-
     // === warnings ===
     if (sub === "warnings") {
       const target = interaction.options.getUser("user");
@@ -805,7 +847,6 @@ client.on("interactionCreate", async interaction => {
 
       return;
     }
-
     // === /moderator unmute ===
     if (sub === "unmute") {
       const user = interaction.options.getUser("user");
@@ -886,86 +927,82 @@ client.on("interactionCreate", async interaction => {
     }
   }
 
-  // === SECTION: COMPONENT HANDLER (MUTE SETUP + RESCAN + BACKUP) ===
-  client.on("interactionCreate", async interaction => {
-    // === MUTE SETUP CHANNEL SELECT MENUS ===
-    if (interaction.isChannelSelectMenu()) {
-      const guild = interaction.guild;
-      if (!guild) return;
-      const guildId = guild.id;
-
-      const mutedRole = await ensureMutedRole(guild);
-
-      if (!muteConfig[guildId]) {
-        muteConfig[guildId] = { appeal: [], tickets: [] };
-        saveMuteConfig();
-      }
-
-      if (interaction.customId === "mute_appeal_channels") {
-        muteConfig[guildId].appeal = interaction.values;
-        saveMuteConfig();
-
-        for (const id of interaction.values) {
-          const ch = guild.channels.cache.get(id);
-          if (!ch) continue;
-
-          await ch.permissionOverwrites
-            .edit(mutedRole, {
-              SendMessages: true,
-              UseApplicationCommands: true
-            })
-            .catch(() => {});
-        }
-
-        return interaction.reply({
-          content: "Appeal channels updated for muted users.",
-          ephemeral: true
-        });
-      }
-
-      if (interaction.customId === "mute_ticket_channels") {
-        muteConfig[guildId].tickets = interaction.values;
-        saveMuteConfig();
-
-        for (const id of interaction.values) {
-          const ch = guild.channels.cache.get(id);
-          if (!ch) continue;
-
-          await ch.permissionOverwrites
-            .edit(mutedRole, {
-              SendMessages: true,
-              UseApplicationCommands: true
-            })
-            .catch(() => {});
-        }
-
-        return interaction.reply({
-          content: "Ticket channels updated for muted users.",
-          ephemeral: true
-        });
-      }
+  // === /backup (GLOBAL) ===
+  if (interaction.commandName === "backup") {
+    if (interaction.user.id !== process.env.USER_ID) {
+      return interaction.reply({
+        content: "Not authorized.",
+        ephemeral: true
+      });
     }
 
-    // === RESCAN GUILD SELECT MENU ===
-    if (interaction.isStringSelectMenu()) {
-      if (interaction.customId === "rescan_guild_select") {
-        if (interaction.user.id !== process.env.USER_ID) {
-          return interaction.reply({
-            content: "Not authorized.",
-            ephemeral: true
-          });
-        }
+    const sub = interaction.options.getSubcommand();
 
-        const selected = interaction.values[0];
+    // /backup muteconfig
+    if (sub === "muteconfig") {
+      const backup = {};
 
+      for (const g of client.guilds.cache.values()) {
+        const id = g.id;
+        backup[id] = muteConfig[id] || { appeal: [], tickets: [] };
+      }
+
+      return interaction.reply({
+        content: "Mute configuration backup for all servers:",
+        files: [
+          {
+            attachment: Buffer.from(JSON.stringify(backup, null, 2)),
+            name: "muteconfig-backup.json"
+          }
+        ],
+        ephemeral: true
+      });
+    }
+
+    // /backup master (modal-based)
+    if (sub === "master") {
+      const modal = new ModalBuilder()
+        .setCustomId("master_backup_modal")
+        .setTitle("Enter Backup Passcode")
+        .addComponents(
+          new ActionRowBuilder().addComponents(
+            new TextInputBuilder()
+              .setCustomId("backup_passcode")
+              .setLabel("Passcode")
+              .setStyle(TextInputStyle.Short)
+              .setRequired(true)
+          )
+        );
+
+      return interaction.showModal(modal);
+    }
+  }
+});
+
+// === SECTION: COMPONENT HANDLER (MUTE SETUP + BACKUP BUTTONS/MODALS + RESCAN) ===
+client.on("interactionCreate", async interaction => {
+  // === RESCAN GUILD SELECT ===
+  if (interaction.isStringSelectMenu()) {
+    if (interaction.customId === "rescan_guild_select") {
+      if (interaction.user.id !== process.env.USER_ID) {
+        return interaction.reply({
+          content: "Not authorized.",
+          ephemeral: true
+        });
+      }
+
+      const selected = interaction.values[0];
+
+      // === GLOBAL RESCAN ===
+      if (selected === "GLOBAL_RESCAN") {
         const modal = new ModalBuilder()
-          .setCustomId(`rescan_modal_${selected}`)
-          .setTitle("Confirm Rescan")
+          .setCustomId("global_rescan_modal")
+          .setTitle("Confirm Global Rescan")
           .addComponents(
             new ActionRowBuilder().addComponents(
               new TextInputBuilder()
                 .setCustomId("rescan_passcode")
-                .setLabel("Enter RESCAN_PASSWORD")
+                .setLabel("Enter Passcode")
                 .setStyle(TextInputStyle.Short)
                 .setRequired(true)
             )
@@ -973,167 +1010,310 @@ client.on("interactionCreate", async interaction => {
 
         return interaction.showModal(modal);
       }
+
+      // === SINGLE GUILD RESCAN ===
+      const modal = new ModalBuilder()
+        .setCustomId(`rescan_modal_${selected}`)
+        .setTitle("Confirm Rescan")
+        .addComponents(
+          new ActionRowBuilder().addComponents(
+            new TextInputBuilder()
+              .setCustomId("rescan_passcode")
+              .setLabel("Enter Passcode")
+              .setStyle(TextInputStyle.Short)
+              .setRequired(true)
+          )
+        );
+
+      return interaction.showModal(modal);
+    }
+  }
+
+  // === MUTE SETUP CHANNEL SELECT MENUS ===
+  if (interaction.isChannelSelectMenu()) {
+    const guild = interaction.guild;
+    if (!guild) return;
+    const guildId = guild.id;
+
+    const mutedRole = await ensureMutedRole(guild);
+
+    if (!muteConfig[guildId]) {
+      muteConfig[guildId] = { appeal: [], tickets: [] };
     }
 
-    // === RESCAN MODAL HANDLER ===
-    if (interaction.isModalSubmit()) {
-      if (interaction.customId.startsWith("rescan_modal_")) {
-        if (interaction.user.id !== process.env.USER_ID) {
-          return interaction.reply({
-            content: "Not authorized.",
-            ephemeral: true
-          });
-        }
+    if (interaction.customId === "mute_appeal_channels") {
+      muteConfig[guildId].appeal = interaction.values;
+      saveMuteConfig();
 
-        const pass = interaction.fields.getTextInputValue("rescan_passcode");
-        if (pass !== process.env.RESCAN_PASSWORD) {
-          return interaction.reply({
-            content: "Incorrect password. Rescan cancelled.",
-            ephemeral: true
-          });
-        }
+      for (const id of interaction.values) {
+        const ch = guild.channels.cache.get(id);
+        if (!ch) continue;
 
-        const target = interaction.customId.replace("rescan_modal_", "");
+        await ch.permissionOverwrites
+          .edit(mutedRole, {
+            SendMessages: true,
+            UseApplicationCommands: true
+          })
+          .catch(() => {});
+      }
 
-        if (target === "GLOBAL_RESCAN") {
-          for (const g of client.guilds.cache.values()) {
-            const id = g.id;
-            ensureGuildMessageData(id);
-            messageCounts[id].live.count = 0;
-            messageCounts[id].live.scanned = false;
-          }
-          saveMessageCounts();
+      return interaction.reply({
+        content: "Appeal channels updated for muted users.",
+        ephemeral: true
+      });
+    }
 
-          for (const g of client.guilds.cache.values()) {
-            scanGuildHistory(g);
-          }
+    if (interaction.customId === "mute_ticket_channels") {
+      muteConfig[guildId].tickets = interaction.values;
+      saveMuteConfig();
 
-          return interaction.reply({
-            content: "Global rescan started for all guilds.",
-            ephemeral: true
-          });
-        }
+      for (const id of interaction.values) {
+        const ch = guild.channels.cache.get(id);
+        if (!ch) continue;
 
-        const guild = client.guilds.cache.get(target);
-        if (!guild) {
-          return interaction.reply({
-            content: "Guild not found.",
-            ephemeral: true
-          });
-        }
+        await ch.permissionOverwrites
+          .edit(mutedRole, {
+            SendMessages: true,
+            UseApplicationCommands: true
+          })
+          .catch(() => {});
+      }
 
-        ensureGuildMessageData(target);
-        messageCounts[target].live.count = 0;
-        messageCounts[target].live.scanned = false;
-        saveMessageCounts();
+      return interaction.reply({
+        content: "Ticket channels updated for muted users.",
+        ephemeral: true
+      });
+    }
+  }
 
-        scanGuildHistory(guild);
-
+  // === BACKUP BUTTONS ===
+  if (interaction.isButton()) {
+    if (interaction.customId === "scheduled_backup_unlock") {
+      if (interaction.user.id !== process.env.USER_ID) {
         return interaction.reply({
-          content: `Rescan started for **${guild.name}**.`,
+          content: "Not authorized.",
           ephemeral: true
         });
       }
 
-      // === MASTER BACKUP + SCHEDULED BACKUP MODALS ===
-      if (
-        interaction.customId === "master_backup_modal" ||
-        interaction.customId === "scheduled_backup_modal"
-      ) {
-        if (interaction.user.id !== process.env.USER_ID) {
-          return interaction.reply({
-            content: "Not authorized.",
-            ephemeral: true
-          });
-        }
+      const modal = new ModalBuilder()
+        .setCustomId("scheduled_backup_modal")
+        .setTitle("Enter Backup Passcode")
+        .addComponents(
+          new ActionRowBuilder().addComponents(
+            new TextInputBuilder()
+              .setCustomId("backup_passcode")
+              .setLabel("Passcode")
+              .setStyle(TextInputStyle.Short)
+              .setRequired(true)
+          )
+        );
 
-        const passcode = interaction.fields.getTextInputValue("backup_passcode");
-        if (passcode !== process.env.MASTER_BACKUP_PASSWORD) {
-          return interaction.reply({
-            content: "Incorrect passcode. Backup cancelled.",
-            ephemeral: true
-          });
-        }
+      return interaction.showModal(modal);
+    }
+  }
+  // === BACKUP MODALS (MASTER + SCHEDULED + RESCAN) ===
+  if (interaction.isModalSubmit()) {
+    const id = interaction.customId;
 
-        const files = [];
-
-        if (fs.existsSync(warnFile)) {
-          files.push({
-            attachment: fs.readFileSync(warnFile),
-            name: "warnCounts.json"
-          });
-        }
-
-        if (fs.existsSync(messageFile)) {
-          files.push({
-            attachment: fs.readFileSync(messageFile),
-            name: "messageCounts.json"
-          });
-        }
-
-        if (fs.existsSync(logFile)) {
-          files.push({
-            attachment: fs.readFileSync(logFile),
-            name: "logChannels.json"
-          });
-        }
-
-        if (fs.existsSync(muteConfigFile)) {
-          files.push({
-            attachment: fs.readFileSync(muteConfigFile),
-            name: "muteConfig.json"
-          });
-        }
-
+    // === MASTER BACKUP ===
+    if (id === "master_backup_modal") {
+      if (interaction.user.id !== process.env.USER_ID) {
         return interaction.reply({
-          content: "Backup complete.",
-          files,
+          content: "Not authorized.",
           ephemeral: true
         });
       }
-    }
 
-    // === SCHEDULED BACKUP BUTTON ===
-    if (interaction.isButton()) {
-      if (interaction.customId === "scheduled_backup_unlock") {
-        if (interaction.user.id !== process.env.USER_ID) {
-          return interaction.reply({
-            content: "Not authorized.",
-            ephemeral: true
-          });
-        }
-
-        const modal = new ModalBuilder()
-          .setCustomId("scheduled_backup_modal")
-          .setTitle("Enter Backup Passcode")
-          .addComponents(
-            new ActionRowBuilder().addComponents(
-              new TextInputBuilder()
-                .setCustomId("backup_passcode")
-                .setLabel("Passcode")
-                .setStyle(TextInputStyle.Short)
-                .setRequired(true)
-            )
-          );
-
-        return interaction.showModal(modal);
+      const pass = interaction.fields.getTextInputValue("backup_passcode");
+      if (pass !== process.env.MASTER_BACKUP_PASSWORD) {
+        return interaction.reply({
+          content: "Incorrect passcode. Backup cancelled.",
+          ephemeral: true
+        });
       }
-    }
-  });
 
-  // === SECTION: STARTUP SCAN (ONLY IF NEVER SCANNED) ===
-  client.on("ready", () => {
-    setTimeout(() => {
+      const files = [];
+
+      if (fs.existsSync(warnFile)) {
+        files.push({
+          attachment: fs.readFileSync(warnFile),
+          name: "warnCounts.json"
+        });
+      }
+
+      if (fs.existsSync(messageFile)) {
+        files.push({
+          attachment: fs.readFileSync(messageFile),
+          name: "messageCounts.json"
+        });
+      }
+
+      if (fs.existsSync(logFile)) {
+        files.push({
+          attachment: fs.readFileSync(logFile),
+          name: "logChannels.json"
+        });
+      }
+
+      if (fs.existsSync(muteConfigFile)) {
+        files.push({
+          attachment: fs.readFileSync(muteConfigFile),
+          name: "muteConfig.json"
+        });
+      }
+
+      return interaction.reply({
+        content: "Master backup completed.",
+        files,
+        ephemeral: true
+      });
+    }
+
+    // === SCHEDULED BACKUP ===
+    if (id === "scheduled_backup_modal") {
+      if (interaction.user.id !== process.env.USER_ID) {
+        return interaction.reply({
+          content: "Not authorized.",
+          ephemeral: true
+        });
+      }
+
+      const pass = interaction.fields.getTextInputValue("backup_passcode");
+      if (pass !== process.env.MASTER_BACKUP_PASSWORD) {
+        return interaction.reply({
+          content: "Incorrect passcode. Backup cancelled.",
+          ephemeral: true
+        });
+      }
+
+      const files = [];
+
+      if (fs.existsSync(warnFile)) {
+        files.push({
+          attachment: fs.readFileSync(warnFile),
+          name: "warnCounts.json"
+        });
+      }
+
+      if (fs.existsSync(messageFile)) {
+        files.push({
+          attachment: fs.readFileSync(messageFile),
+          name: "messageCounts.json"
+        });
+      }
+
+      if (fs.existsSync(logFile)) {
+        files.push({
+          attachment: fs.readFileSync(logFile),
+          name: "logChannels.json"
+        });
+      }
+
+      if (fs.existsSync(muteConfigFile)) {
+        files.push({
+          attachment: fs.readFileSync(muteConfigFile),
+          name: "muteConfig.json"
+        });
+      }
+
+      return interaction.reply({
+        content: "Scheduled backup completed.",
+        files,
+        ephemeral: true
+      });
+    }
+
+    // === SINGLE-GUILD RESCAN ===
+    if (id.startsWith("rescan_modal_")) {
+      if (interaction.user.id !== process.env.USER_ID) {
+        return interaction.reply({
+          content: "Not authorized.",
+          ephemeral: true
+        });
+      }
+
+      const guildId = id.replace("rescan_modal_", "");
+      const pass = interaction.fields.getTextInputValue("rescan_passcode");
+
+      if (pass !== process.env.MASTER_BACKUP_PASSWORD) {
+        return interaction.reply({
+          content: "Incorrect passcode. Rescan cancelled.",
+          ephemeral: true
+        });
+      }
+
+      const guild = client.guilds.cache.get(guildId);
+      if (!guild) {
+        return interaction.reply({
+          content: "Guild not found.",
+          ephemeral: true
+        });
+      }
+
+      await interaction.reply({
+        content: `Rescanning **${guild.name}**...`,
+        ephemeral: true
+      });
+
+      await scanGuildHistory(guild);
+
+      return interaction.followUp({
+        content: `Rescan complete for **${guild.name}**.`,
+        ephemeral: true
+      });
+    }
+
+    // === GLOBAL RESCAN ===
+    if (id === "global_rescan_modal") {
+      if (interaction.user.id !== process.env.USER_ID) {
+        return interaction.reply({
+          content: "Not authorized.",
+          ephemeral: true
+        });
+      }
+
+      const pass = interaction.fields.getTextInputValue("rescan_passcode");
+
+      if (pass !== process.env.MASTER_BACKUP_PASSWORD) {
+        return interaction.reply({
+          content: "Incorrect passcode. Global rescan cancelled.",
+          ephemeral: true
+        });
+      }
+
+      await interaction.reply({
+        content: "Starting **global rescan**...",
+        ephemeral: true
+      });
+
       for (const guild of client.guilds.cache.values()) {
-        const id = guild.id;
-        ensureGuildMessageData(id);
-
-        if (!messageCounts[id].live.scanned) {
-          scanGuildHistory(guild);
-        }
+        await scanGuildHistory(guild);
       }
-    }, 5000);
-  });
 
-  // === SECTION: LOGIN ===
-  client.login(process.env.TOKEN);
+      return interaction.followUp({
+        content: "Global rescan complete.",
+        ephemeral: true
+      });
+    }
+  }
+});
+
+// === SECTION: STARTUP SCAN ===
+client.on("ready", async () => {
+  console.log(`Logged in as ${client.user.tag}`);
+
+  for (const guild of client.guilds.cache.values()) {
+    ensureGuildMessageData(guild.id);
+
+    if (!messageCounts[guild.id].live.scanned) {
+      console.log(`Performing startup scan for ${guild.name}...`);
+      await scanGuildHistory(guild);
+    }
+  }
+
+  console.log("Startup scan complete.");
+});
+
+// === SECTION: LOGIN ===
+client.login(process.env.TOKEN);
