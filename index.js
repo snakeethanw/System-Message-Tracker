@@ -335,11 +335,11 @@ function getDynamicDelay() {
     ? recentLatencies.reduce((a, b) => a + b, 0) / recentLatencies.length
     : 200;
 
-  if (recentMessageBursts > 20) return 1200;
-  if (avg > 1500) return 1200;
-  if (avg > 800) return 900;
-  if (avg > 400) return 600;
-  return 300;
+  if (recentMessageBursts > 20) return 4000;   // heavy live activity
+  if (avg > 1500) return 4000;                 // discord slow / rate limited
+  if (avg > 800) return 3000;                  // medium load
+  if (avg > 400) return 2000;                  // light load
+  return 1500;                                 // idle
 }
 
 // === GLOBAL SCAN SCHEDULER ===
@@ -1422,3 +1422,4 @@ client.once("clientReady", initializeStartup);
 
 // === SECTION: LOGIN ===
 client.login(process.env.TOKEN);
+
