@@ -35,6 +35,11 @@ client.on("error", console.error);
 client.on("shardError", console.error);
 process.on("unhandledRejection", console.error);
 
+// === HEARTBEAT ===
+setInterval(() => {
+  console.log("Heartbeat: bot alive", new Date().toISOString());
+}, 1000 * 60 * 30); // every 30 minutes
+
 // === SECTION: STORAGE: MESSAGE COUNTS ===
 const messageFile = "./messageCounts.json";
 let messageCounts = {};
@@ -1422,4 +1427,5 @@ client.once("clientReady", initializeStartup);
 
 // === SECTION: LOGIN ===
 client.login(process.env.TOKEN);
+
 
