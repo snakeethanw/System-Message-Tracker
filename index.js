@@ -1429,3 +1429,5 @@ client.once("clientReady", initializeStartup);
 client.login(process.env.TOKEN);
 
 
+
+
